@@ -1,15 +1,20 @@
 package keywork
 
 import (
+	"errors"
+	"io"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
 )
 
 const addr = ":2113"
 
-type Server struct{}
+type Server struct {
+	mu sync.Mutex
+}
 
 func NewServer() *Server {
 	return &Server{}
@@ -29,17 +34,38 @@ func (s *Server) ListenAndServe() error {
 			continue
 		}
 		go func() {
-			err := s.handleConn(conn)
-			if err != nil {
-				log.Printf("error: %v", err)
+			c := Connection{
+				conn:   conn,
+				enc:    msgpack.NewEncoder(conn),
+				server: s,
+			}
+			err := c.Serve()
+			if err != nil && !errors.Is(err, io.EOF) {
+				c.Log("error: %v", err)
 			}
 		}()
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) error {
-	log.Println("New connection")
-	dec := msgpack.NewDecoder(conn)
+type Connection struct {
+	server *Server
+	conn   net.Conn
+	enc    *msgpack.Encoder
+	encMu  sync.Mutex
+}
+
+func (c *Connection) Log(format string, v ...any) {
+	if len(v) == 0 {
+		log.Printf("[%s] "+format, c.conn.RemoteAddr().String())
+		return
+	}
+	log.Printf("[%s] "+format, c.conn.RemoteAddr().String(), v)
+}
+
+func (c *Connection) Serve() error {
+	c.Log("New connection")
+	defer c.Log("Connection closed")
+	dec := msgpack.NewDecoder(c.conn)
 	for {
 		msg, err := dec.DecodeSlice()
 		if err != nil {
@@ -49,7 +75,7 @@ func (s *Server) handleConn(conn net.Conn) error {
 		msgType, id, method, args, err := validateMsg(msg)
 		if err != nil {
 			// A single bad message is recoverable
-			log.Printf("Invalid RPC message: %v", err)
+			c.Log("Invalid RPC message: %v", err)
 			continue
 		}
 
@@ -57,21 +83,21 @@ func (s *Server) handleConn(conn net.Conn) error {
 		case 0: // Request
 			switch method {
 			case "connect":
-				err := s.handleConnect(id, args)
+				err := c.handleConnect(id, args)
 				if err != nil {
-					log.Printf("Invalid RPC request: %v", err)
+					c.Log("Invalid RPC request: %v", err)
 					continue
 				}
 			}
 		case 1: // Response
 		case 2: // Notification
 		default:
-			log.Printf("Invalid RPC message. MsgType must be 0, 1, or 2. Got: %d. Message=%v", msgType, msg)
+			c.Log("Invalid RPC message. MsgType must be 0, 1, or 2. Got: %d. Message=%v", msgType, msg)
 		}
 	}
 }
 
-func (s *Server) handleConnect(id int, args []interface{}) error {
+func (c *Connection) handleConnect(id int, args []interface{}) error {
 	err := expectLen(2, args)
 	if err != nil {
 		return err

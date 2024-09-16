@@ -1,4 +1,4 @@
-module github.com/rockorager/offmap
+module github.com/rockorager/keywork
 
 go 1.22.6
 
