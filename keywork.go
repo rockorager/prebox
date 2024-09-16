@@ -2,9 +2,11 @@ package keywork
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/mail"
 	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -12,12 +14,45 @@ import (
 
 const addr = ":2113"
 
-type Server struct {
-	mu sync.Mutex
+type Mailbox struct {
+	Name      string `msgpack:"name"`
+	Id        string `msgpack:"id"`
+	ParentId  string `msgpack:"parent_id"`
+	Role      string `msgpack:"role"`
+	Total     uint   `msgpack:"total"`
+	Unread    uint   `msgpack:"unread"`
+	SortOrder uint   `msgpack:"sort_order"`
 }
 
-func NewServer() *Server {
-	return &Server{}
+type Email struct {
+	Id         string          `msgpack:"id"`
+	Subject    string          `msgpack:"subject"`
+	MessageId  string          `msgpack:"message_id"`
+	InReplyTo  string          `msgpack:"in_reply_to"`
+	References []string        `msgpack:"references"`
+	From       []*mail.Address `msgpack:"from"`
+	Mailboxes  []string        `msgpack:"mailbox_ids"`
+	Keywords   []string        `msgpack:"keywords"`
+	ReceivedAt int64           `msgpack:"timestamp"`
+}
+
+type Server struct {
+	backends []Backend
+	mu       sync.Mutex
+}
+
+func NewServer(cfgs []Config) *Server {
+	s := &Server{
+		backends: make([]Backend, 0, len(cfgs)),
+	}
+	for _, cfg := range cfgs {
+		switch cfg.url.Scheme {
+		case "jmap":
+			log.Println("jmap backend")
+			NewJmapClient(cfg.name, cfg.url)
+		}
+	}
+	return s
 }
 
 func (s *Server) ListenAndServe() error {

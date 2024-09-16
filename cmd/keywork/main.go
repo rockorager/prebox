@@ -17,6 +17,10 @@ func main() {
 }
 
 func run() error {
-	s := keywork.NewServer()
+	cfgs, err := keywork.LoadConfig()
+	if err != nil {
+		return err
+	}
+	s := keywork.NewServer(cfgs)
 	return s.ListenAndServe()
 }
