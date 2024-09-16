@@ -55,11 +55,11 @@ type Connection struct {
 }
 
 func (c *Connection) Log(format string, v ...any) {
-	if len(v) == 0 {
-		log.Printf("[%s] "+format, c.conn.RemoteAddr().String())
-		return
+	message := format
+	if len(v) > 0 {
+		message = fmt.Sprintf(format, v...)
 	}
-	log.Printf("[%s] "+format, c.conn.RemoteAddr().String(), v)
+	log.Printf("[%s] %s", c.conn.RemoteAddr().String(), message)
 }
 
 func (c *Connection) Serve() error {
