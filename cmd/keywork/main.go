@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.Flags() | log.Lshortfile | log.Lmicroseconds)
+	log.SetFlags(log.Flags() | log.Lmicroseconds)
 	err := run()
 	if err != nil {
 		log.Printf("error: %v", err)
