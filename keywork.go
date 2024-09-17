@@ -137,6 +137,12 @@ func (c *Connection) Serve() error {
 		switch msgType {
 		case 0: // Request
 			switch method {
+			case "list_remotes":
+				err := c.handleListRemotes(id)
+				if err != nil {
+					c.writeErrorResponse(id, "connect", err)
+					continue
+				}
 			case "connect":
 				err := c.handleConnect(id, args)
 				if err != nil {
@@ -144,7 +150,7 @@ func (c *Connection) Serve() error {
 					continue
 				}
 			case "list_mailboxes":
-				err := c.handleListMailboxes(id, args)
+				err := c.handleListMailboxes(id)
 				if err != nil {
 					c.writeErrorResponse(id, "connect", err)
 					continue
@@ -156,6 +162,24 @@ func (c *Connection) Serve() error {
 			c.Log("Invalid RPC message. MsgType must be 0, 1, or 2. Got: %d. Message=%v", msgType, msg)
 		}
 	}
+}
+
+func (c *Connection) handleListRemotes(id int) error {
+	c.server.mu.Lock()
+	defer c.server.mu.Unlock()
+	result := make([]string, 0, len(c.server.backends))
+	for _, backend := range c.server.backends {
+		result = append(result, backend.Name())
+	}
+	msg := []interface{}{
+		1,
+		id,
+		"list_remotes",
+		result,
+	}
+	c.encMu.Lock()
+	defer c.encMu.Unlock()
+	return c.enc.Encode(msg)
 }
 
 func (c *Connection) handleConnect(id int, args []interface{}) error {
@@ -179,7 +203,7 @@ func (c *Connection) handleConnect(id int, args []interface{}) error {
 	return fmt.Errorf("backend not found: %s", name)
 }
 
-func (c *Connection) handleListMailboxes(id int, args []interface{}) error {
+func (c *Connection) handleListMailboxes(id int) error {
 	if c.backend == nil {
 		return fmt.Errorf("not connected to a backend")
 	}
@@ -189,7 +213,7 @@ func (c *Connection) handleListMailboxes(id int, args []interface{}) error {
 	}
 	msg := []interface{}{
 		1,
-		2,
+		id,
 		"list_mailboxes",
 		mailboxes,
 	}
