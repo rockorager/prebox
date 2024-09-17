@@ -144,27 +144,11 @@ func (c *Connection) Serve() error {
 					continue
 				}
 			case "list_mailboxes":
-				if c.backend == nil {
-					c.writeErrorResponse(id, "list_mailboxes", fmt.Errorf("not connected to a backend"))
-					continue
-				}
-				mailboxes, err := c.backend.ListMailboxes()
+				err := c.handleListMailboxes(id, args)
 				if err != nil {
-					c.writeErrorResponse(id, "list_mailboxes", fmt.Errorf("list_mailboxes error: %v", err))
+					c.writeErrorResponse(id, "connect", err)
 					continue
 				}
-				msg := []interface{}{
-					1,
-					2,
-					"list_mailboxes",
-					mailboxes,
-				}
-				c.encMu.Lock()
-				if err := c.enc.Encode(msg); err != nil {
-					c.Log("encode error: %v", err)
-				}
-				c.encMu.Unlock()
-
 			}
 		case 1: // Response
 		case 2: // Notification
@@ -193,6 +177,25 @@ func (c *Connection) handleConnect(id int, args []interface{}) error {
 		return c.writeResponse(id, "connect", []interface{}{})
 	}
 	return fmt.Errorf("backend not found: %s", name)
+}
+
+func (c *Connection) handleListMailboxes(id int, args []interface{}) error {
+	if c.backend == nil {
+		return fmt.Errorf("not connected to a backend")
+	}
+	mailboxes, err := c.backend.ListMailboxes()
+	if err != nil {
+		return err
+	}
+	msg := []interface{}{
+		1,
+		2,
+		"list_mailboxes",
+		mailboxes,
+	}
+	c.encMu.Lock()
+	defer c.encMu.Unlock()
+	return c.enc.Encode(msg)
 }
 
 func (c *Connection) writeResponse(id int, method string, args []interface{}) error {
