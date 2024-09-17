@@ -140,7 +140,7 @@ func (c *Connection) Serve() error {
 			case "list_remotes":
 				err := c.handleListRemotes(id)
 				if err != nil {
-					c.writeErrorResponse(id, "connect", err)
+					c.writeErrorResponse(id, "list_remotes", err)
 					continue
 				}
 			case "connect":
@@ -152,7 +152,7 @@ func (c *Connection) Serve() error {
 			case "list_mailboxes":
 				err := c.handleListMailboxes(id)
 				if err != nil {
-					c.writeErrorResponse(id, "connect", err)
+					c.writeErrorResponse(id, "list_mailboxes", err)
 					continue
 				}
 			}
