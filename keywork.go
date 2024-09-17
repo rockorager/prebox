@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/mail"
 	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -25,15 +24,25 @@ type Mailbox struct {
 }
 
 type Email struct {
-	Id         string          `msgpack:"id"`
-	Subject    string          `msgpack:"subject"`
-	MessageId  string          `msgpack:"message_id"`
-	InReplyTo  string          `msgpack:"in_reply_to"`
-	References []string        `msgpack:"references"`
-	From       []*mail.Address `msgpack:"from"`
-	Mailboxes  []string        `msgpack:"mailbox_ids"`
-	Keywords   []string        `msgpack:"keywords"`
-	ReceivedAt int64           `msgpack:"timestamp"`
+	Id         string    `msgpack:"id"`
+	Subject    string    `msgpack:"subject"`
+	MessageId  string    `msgpack:"message_id"`
+	InReplyTo  string    `msgpack:"in_reply_to"`
+	Date       string    `msgpack:"date"`
+	References []string  `msgpack:"references"`
+	ReplyTo    []Address `msgpack:"reply_to"`
+	From       []Address `msgpack:"from"`
+	To         []Address `msgpack:"to"`
+	Cc         []Address `msgpack:"cc"`
+	Bcc        []Address `msgpack:"bcc"`
+	Mailboxes  []string  `msgpack:"mailbox_ids"`
+	Keywords   []string  `msgpack:"keywords"`
+	Size       uint      `msgpack:"size"`
+}
+
+type Address struct {
+	Name  string `msgpack:"name"`
+	Email string `msgpack:"email"`
 }
 
 type Server struct {
@@ -49,7 +58,17 @@ func NewServer(cfgs []Config) *Server {
 		switch cfg.url.Scheme {
 		case "jmap":
 			log.Println("jmap backend")
-			NewJmapClient(cfg.name, cfg.url)
+			client, err := NewJmapClient(cfg.name, cfg.url)
+			if err != nil {
+				log.Printf("error: %v", err)
+				continue
+			}
+			err = client.Connect()
+			if err != nil {
+				log.Printf("[%s] error: %v", cfg.name, err)
+				continue
+			}
+			s.backends = append(s.backends, client)
 		}
 	}
 	return s
@@ -83,10 +102,11 @@ func (s *Server) ListenAndServe() error {
 }
 
 type Connection struct {
-	server *Server
-	conn   net.Conn
-	enc    *msgpack.Encoder
-	encMu  sync.Mutex
+	server  *Server
+	conn    net.Conn
+	backend Backend
+	enc     *msgpack.Encoder
+	encMu   sync.Mutex
 }
 
 func (c *Connection) Log(format string, v ...any) {
@@ -110,7 +130,7 @@ func (c *Connection) Serve() error {
 		msgType, id, method, args, err := validateMsg(msg)
 		if err != nil {
 			// A single bad message is recoverable
-			c.Log("Invalid RPC message: %v", err)
+			c.writeErrorNotification(fmt.Errorf("invalid RPC message: %v", err))
 			continue
 		}
 
@@ -120,9 +140,31 @@ func (c *Connection) Serve() error {
 			case "connect":
 				err := c.handleConnect(id, args)
 				if err != nil {
-					c.Log("Invalid RPC request: %v", err)
+					c.writeErrorResponse(id, "connect", err)
 					continue
 				}
+			case "list_mailboxes":
+				if c.backend == nil {
+					c.writeErrorResponse(id, "list_mailboxes", fmt.Errorf("not connected to a backend"))
+					continue
+				}
+				mailboxes, err := c.backend.ListMailboxes()
+				if err != nil {
+					c.writeErrorResponse(id, "list_mailboxes", fmt.Errorf("list_mailboxes error: %v", err))
+					continue
+				}
+				msg := []interface{}{
+					1,
+					2,
+					"list_mailboxes",
+					mailboxes,
+				}
+				c.encMu.Lock()
+				if err := c.enc.Encode(msg); err != nil {
+					c.Log("encode error: %v", err)
+				}
+				c.encMu.Unlock()
+
 			}
 		case 1: // Response
 		case 2: // Notification
@@ -133,19 +175,70 @@ func (c *Connection) Serve() error {
 }
 
 func (c *Connection) handleConnect(id int, args []interface{}) error {
-	err := expectLen(2, args)
+	err := expectLen(1, args)
 	if err != nil {
 		return err
 	}
-	uri, err := expectString(args[0])
+	name, err := expectString(args[0])
 	if err != nil {
 		return err
 	}
-	name, err := expectString(args[1])
-	if err != nil {
-		return err
+	c.server.mu.Lock()
+	defer c.server.mu.Unlock()
+	for _, backend := range c.server.backends {
+		if backend.Name() != name {
+			continue
+		}
+		c.backend = backend
+		return c.writeResponse(id, "connect", []interface{}{})
 	}
-	_ = uri
-	_ = name
-	return nil
+	return fmt.Errorf("backend not found: %s", name)
+}
+
+func (c *Connection) writeResponse(id int, method string, args []interface{}) error {
+	c.encMu.Lock()
+	defer c.encMu.Unlock()
+	msg := []interface{}{
+		1, // response
+		id,
+		method,
+		args,
+	}
+	return c.enc.Encode(msg)
+}
+
+func (c *Connection) writeErrorResponse(id int, method string, err error) {
+	c.Log("Request error: id=%d method=%s error: %v", id, method, err)
+	c.encMu.Lock()
+	defer c.encMu.Unlock()
+	msg := []interface{}{
+		1, // response
+		id,
+		"error",
+		[]interface{}{
+			method,
+			err.Error(),
+		},
+	}
+	err = c.enc.Encode(msg)
+	if err != nil {
+		c.Log("couldn't encode error response: %v", err)
+	}
+}
+
+func (c *Connection) writeErrorNotification(err error) {
+	c.Log("RPC error: %v", err)
+	c.encMu.Lock()
+	defer c.encMu.Unlock()
+	msg := []interface{}{
+		2, // notification
+		"error",
+		[]interface{}{
+			err.Error(),
+		},
+	}
+	err = c.enc.Encode(msg)
+	if err != nil {
+		c.Log("couldn't encode error notification: %v", err)
+	}
 }
