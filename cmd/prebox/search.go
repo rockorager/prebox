@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/rockorager/prebox"
 	"github.com/spf13/cobra"
@@ -66,9 +65,6 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 		}
 		emls = append(emls, eml)
 	}
-	sort.Slice(emls, func(i, j int) bool {
-		return emls[i].Date < emls[j].Date
-	})
 	for _, eml := range emls {
 		fmt.Printf("(%s) %s\n", eml.Date, eml.Subject)
 	}
