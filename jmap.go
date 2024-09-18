@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -535,7 +536,30 @@ func (c *JmapClient) ListMailboxes() ([]Mailbox, error) {
 	if err != nil {
 		return []Mailbox{}, err
 	}
+
+	// Sort by sort by sort order and name
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].SortOrder != result[j].SortOrder {
+			return result[i].SortOrder < result[j].SortOrder
+		}
+		return result[i].Name < result[j].Name
+	})
+
+	r2 := make([]Mailbox, 0, len(result))
+	// Sort as a tree
+	result = sortMailboxTree("", result, r2)
+
 	return result, nil
+}
+
+func sortMailboxTree(parent string, mboxes []Mailbox, result []Mailbox) []Mailbox {
+	for _, mbox := range mboxes {
+		if mbox.ParentId == parent {
+			result = append(result, mbox)
+			result = sortMailboxTree(mbox.Id, mboxes, result)
+		}
+	}
+	return result
 }
 
 func jmapToMsgpackMailbox(jmbox *mailbox.Mailbox) Mailbox {

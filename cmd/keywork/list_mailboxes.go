@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/rockorager/keywork"
 	"github.com/spf13/cobra"
@@ -57,23 +56,14 @@ func listMailboxesCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	mboxes := make([]keywork.Mailbox, 0, argLen)
 	for i := 0; i < argLen; i += 1 {
 		mbox := keywork.Mailbox{}
 		err := dec.Decode(&mbox)
 		if err != nil {
 			return err
 		}
-		mboxes = append(mboxes, mbox)
+		fmt.Println(mbox.Name)
 	}
-
-	sort.Slice(mboxes, func(i, j int) bool {
-		if mboxes[i].SortOrder != mboxes[j].SortOrder {
-			return mboxes[i].SortOrder < mboxes[j].SortOrder
-		}
-		return mboxes[i].Name < mboxes[j].Name
-	})
-	printMailboxes("", mboxes)
 
 	return nil
 }
