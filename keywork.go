@@ -1,6 +1,7 @@
 package keywork
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+var errNotConnected = errors.New("not connected to a backend")
 
 const addr = ":2113"
 
@@ -90,7 +93,6 @@ func (s *Server) ListenAndServe() error {
 		go func() {
 			c := Connection{
 				conn:   conn,
-				enc:    msgpack.NewEncoder(conn),
 				server: s,
 			}
 			err := c.Serve()
@@ -102,11 +104,10 @@ func (s *Server) ListenAndServe() error {
 }
 
 type Connection struct {
-	server  *Server
 	conn    net.Conn
 	backend Backend
-	enc     *msgpack.Encoder
-	encMu   sync.Mutex
+	server  *Server
+	writeMu sync.Mutex
 }
 
 func (c *Connection) Log(format string, v ...any) {
@@ -155,6 +156,14 @@ func (c *Connection) Serve() error {
 					c.writeErrorResponse(id, "list_mailboxes", err)
 					continue
 				}
+			case "search":
+				err := c.handleSearch(id, args)
+				if err != nil {
+					c.writeErrorResponse(id, "search", err)
+					continue
+				}
+			default:
+				c.writeErrorResponse(id, method, fmt.Errorf("unhandled method", method))
 			}
 		case 1: // Response
 		case 2: // Notification
@@ -177,9 +186,7 @@ func (c *Connection) handleListRemotes(id int) error {
 		"list_remotes",
 		result,
 	}
-	c.encMu.Lock()
-	defer c.encMu.Unlock()
-	return c.enc.Encode(msg)
+	return c.writeMsg(msg)
 }
 
 func (c *Connection) handleConnect(id int, args []interface{}) error {
@@ -198,14 +205,20 @@ func (c *Connection) handleConnect(id int, args []interface{}) error {
 			continue
 		}
 		c.backend = backend
-		return c.writeResponse(id, "connect", []interface{}{})
+		msg := []interface{}{
+			1,
+			id,
+			"connect",
+			[]interface{}{},
+		}
+		return c.writeMsg(msg)
 	}
 	return fmt.Errorf("backend not found: %s", name)
 }
 
 func (c *Connection) handleListMailboxes(id int) error {
 	if c.backend == nil {
-		return fmt.Errorf("not connected to a backend")
+		return errNotConnected
 	}
 	mailboxes, err := c.backend.ListMailboxes()
 	if err != nil {
@@ -217,27 +230,24 @@ func (c *Connection) handleListMailboxes(id int) error {
 		"list_mailboxes",
 		mailboxes,
 	}
-	c.encMu.Lock()
-	defer c.encMu.Unlock()
-	return c.enc.Encode(msg)
+	return c.writeMsg(msg)
 }
 
-func (c *Connection) writeResponse(id int, method string, args []interface{}) error {
-	c.encMu.Lock()
-	defer c.encMu.Unlock()
-	msg := []interface{}{
-		1, // response
-		id,
-		method,
-		args,
+// msg should be the full msgpack-rpc msg.
+func (c *Connection) writeMsg(msg []interface{}) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	buf := bufio.NewWriter(c.conn)
+	enc := msgpack.NewEncoder(buf)
+	err := enc.Encode(msg)
+	if err != nil {
+		return err
 	}
-	return c.enc.Encode(msg)
+	return buf.Flush()
 }
 
 func (c *Connection) writeErrorResponse(id int, method string, err error) {
 	c.Log("Request error: id=%d method=%s error: %v", id, method, err)
-	c.encMu.Lock()
-	defer c.encMu.Unlock()
 	msg := []interface{}{
 		1, // response
 		id,
@@ -247,16 +257,13 @@ func (c *Connection) writeErrorResponse(id int, method string, err error) {
 			err.Error(),
 		},
 	}
-	err = c.enc.Encode(msg)
-	if err != nil {
+	if err := c.writeMsg(msg); err != nil {
 		c.Log("couldn't encode error response: %v", err)
 	}
 }
 
 func (c *Connection) writeErrorNotification(err error) {
 	c.Log("RPC error: %v", err)
-	c.encMu.Lock()
-	defer c.encMu.Unlock()
 	msg := []interface{}{
 		2, // notification
 		"error",
@@ -264,8 +271,33 @@ func (c *Connection) writeErrorNotification(err error) {
 			err.Error(),
 		},
 	}
-	err = c.enc.Encode(msg)
-	if err != nil {
-		c.Log("couldn't encode error notification: %v", err)
+	if err := c.writeMsg(msg); err != nil {
+		c.Log("couldn't encode error response: %v", err)
 	}
+}
+
+func (c *Connection) handleSearch(id int, args []interface{}) error {
+	if c.backend == nil {
+		return errNotConnected
+	}
+	query := make([]string, 0, len(args))
+	for _, arg := range args {
+		term, err := expectString(arg)
+		if err != nil {
+			return err
+		}
+		query = append(query, term)
+	}
+	emls, err := c.backend.Search(query)
+	if err != nil {
+		return err
+	}
+
+	msg := []interface{}{
+		1, // response
+		id,
+		"search",
+		emls,
+	}
+	return c.writeMsg(msg)
 }

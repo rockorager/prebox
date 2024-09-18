@@ -14,10 +14,8 @@ import (
 	"git.sr.ht/~rockorager/go-jmap/mail"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/vmihailenco/msgpack/v5"
+	"go.etcd.io/bbolt"
 )
 
 const stateChangeDebounce = 250 * time.Millisecond
@@ -39,25 +37,27 @@ var emailProperties = []string{
 type JmapClient struct {
 	cl                  *jmap.Client
 	url                 *url.URL
-	db                  *leveldb.DB
+	db                  *bbolt.DB
 	stateChangeDebounce *time.Timer
-	emails              map[string]*Email
 	name                string
 }
 
 func NewJmapClient(name string, url *url.URL) (*JmapClient, error) {
 	client := &JmapClient{
-		name:   name,
-		emails: make(map[string]*Email),
-		url:    url,
+		name: name,
+		url:  url,
 	}
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err
 	}
+	err = os.MkdirAll(path.Join(cacheDir, "keywork"), 0o700)
+	if err != nil {
+		return nil, err
+	}
 	dbPath := path.Join(cacheDir, "keywork", name+".db")
 	client.Log("Cache db path: %q", dbPath)
-	db, err := leveldb.OpenFile(dbPath, nil)
+	db, err := bbolt.Open(dbPath, 0o666, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -96,22 +96,29 @@ func (c *JmapClient) Connect() error {
 	}
 
 	// Get the session object
-	val, err := c.db.Get(sessionKey, nil)
-	switch err {
-	case leveldb.ErrNotFound:
+	// val, err := c.db.Get(sessionKey, nil)
+	var val []byte
+	c.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte("state"))
+		if bucket == nil {
+			return bbolt.ErrBucketNotFound
+		}
+		val = bucket.Get(sessionKey)
+		return nil
+	})
+	switch len(val) {
+	case 0:
 		c.Log("Session not in cache. Retrieving from server...")
 		// We don't have one, authenticate to retrieve it
 		err := c.refreshSession()
 		if err != nil {
 			return err
 		}
-	case nil:
+	default:
 		err := json.Unmarshal(val, &c.cl.Session)
 		if err != nil {
 			return err
 		}
-	default:
-		return err
 	}
 
 	es := push.EventSource{
@@ -164,7 +171,13 @@ func (c *JmapClient) refreshSession() error {
 		return err
 	}
 	// Save it in the cache
-	return c.db.Put(sessionKey, b, nil)
+	return c.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte("state"))
+		if err != nil {
+			return err
+		}
+		return bucket.Put(sessionKey, b)
+	})
 }
 
 func (c *JmapClient) debounceStateChange(state *jmap.StateChange) {
@@ -192,7 +205,15 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 	for k, v := range state.Changed[acct] {
 		switch k {
 		case "Mailbox":
-			val, _ := c.db.Get(stateMailbox, nil)
+			var val []byte
+			c.db.View(func(tx *bbolt.Tx) error {
+				bucket := tx.Bucket([]byte("state"))
+				if bucket == nil {
+					return bbolt.ErrBucketNotFound
+				}
+				val = bucket.Get(stateMailbox)
+				return nil
+			})
 			mboxState := string(val)
 			switch {
 			case mboxState == "":
@@ -226,7 +247,15 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 				c.Log("No mailbox changes")
 			}
 		case "Email":
-			val, _ := c.db.Get(stateEmail, nil)
+			var val []byte
+			c.db.View(func(tx *bbolt.Tx) error {
+				bucket := tx.Bucket([]byte("state"))
+				if bucket == nil {
+					return bbolt.ErrBucketNotFound
+				}
+				val = bucket.Get(stateEmail)
+				return nil
+			})
 			emlState := string(val)
 			switch {
 			case emlState == "":
@@ -278,113 +307,141 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 		c.Log("Client error: %v", err)
 		return
 	}
-	for _, resp := range r.Responses {
-		switch arg := resp.Args.(type) {
-		case *mailbox.ChangesResponse:
-			for _, v := range arg.Destroyed {
-				key := append(mailboxPrefix, []byte(v)...)
-				err := c.db.Delete(key, nil)
-				if err != nil {
-					c.Log("Couldn't delete mailbox: %v", err)
+	toFetch := []jmap.ID{}
+	c.db.Update(func(tx *bbolt.Tx) error {
+		mboxBucket, err := tx.CreateBucketIfNotExists(mailboxPrefix)
+		if err != nil {
+			return err
+		}
+		emlBucket, err := tx.CreateBucketIfNotExists(emailPrefix)
+		if err != nil {
+			return err
+		}
+		stateBucket, err := tx.CreateBucketIfNotExists([]byte("state"))
+		if err != nil {
+			return err
+		}
+
+		for _, resp := range r.Responses {
+			switch arg := resp.Args.(type) {
+			case *mailbox.ChangesResponse:
+				for _, v := range arg.Destroyed {
+					err := mboxBucket.Delete([]byte(v))
+					if err != nil {
+						c.Log("Couldn't delete mailbox: %v", err)
+						continue
+					}
+				}
+			case *mailbox.GetResponse:
+				if len(arg.List) == 0 {
 					continue
 				}
-			}
-		case *mailbox.GetResponse:
-			if len(arg.List) == 0 {
-				continue
-			}
-			for _, v := range arg.List {
-				key := append(mailboxPrefix, []byte(v.ID)...)
-				mbox := jmapToMsgpackMailbox(v)
-				b, err := msgpack.Marshal(mbox)
-				if err != nil {
-					c.Log("Couldn't encode mailbox: %v", err)
+				for _, v := range arg.List {
+					mbox := jmapToMsgpackMailbox(v)
+					b, err := msgpack.Marshal(mbox)
+					if err != nil {
+						c.Log("Couldn't encode mailbox: %v", err)
+						continue
+					}
+					err = mboxBucket.Put([]byte(v.ID), b)
+					if err != nil {
+						c.Log("Couldn't cache mailbox: %v", err)
+						continue
+					}
+					// TODO: send mailbox to connections
+					_ = mbox
+				}
+				c.Log("Mailbox state updated to: %q", arg.State)
+				stateBucket.Put(stateMailbox, []byte(arg.State))
+			case *email.ChangesResponse:
+				for _, v := range arg.Destroyed {
+					key := []byte(v)
+					err := emlBucket.Delete(key)
+					if err != nil {
+						c.Log("Couldn't delete email: %v", err)
+						continue
+					}
+				}
+			case *email.GetResponse:
+				if len(arg.List) == 0 {
 					continue
 				}
-				err = c.db.Put(key, b, nil)
-				if err != nil {
-					c.Log("Couldn't cache mailbox: %v", err)
-					continue
-				}
-				// TODO: send mailbox to connections
-				_ = mbox
-			}
-			c.Log("Mailbox state updated to: %q", arg.State)
-			c.db.Put(stateMailbox, []byte(arg.State), nil)
-		case *email.ChangesResponse:
-			for _, v := range arg.Destroyed {
-				key := append(emailPrefix, []byte(v)...)
-				err := c.db.Delete(key, nil)
-				if err != nil {
-					c.Log("Couldn't delete email: %v", err)
-					continue
-				}
-			}
-		case *email.GetResponse:
-			if len(arg.List) == 0 {
-				continue
-			}
-			updated := resp.CallID == emlUpdatedCallId
-			if updated {
-				c.Log("Updated %d email", len(arg.List))
-			} else {
-				c.Log("Fetched %d new emails", len(arg.List))
-			}
-			for _, v := range arg.List {
-				var eml Email
-				key := append(emailPrefix, []byte(v.ID)...)
+				updated := resp.CallID == emlUpdatedCallId
 				if updated {
-					// get the message from the db and
-					// update it
-					val, err := c.db.Get(key, nil)
+					c.Log("Updated %d emails", len(arg.List))
+				} else {
+					c.Log("Fetched %d new emails", len(arg.List))
+				}
+				for _, v := range arg.List {
+					var eml Email
+					if updated {
+						// get the message from the db and
+						// update it
+						val := emlBucket.Get([]byte(v.ID))
+						if len(val) == 0 {
+							c.Log("Couldn't find id %q", v.ID)
+							continue
+						}
+						err = msgpack.Unmarshal(val, &eml)
+						if err != nil {
+							c.Log("Couldn't decode: %s", v.ID)
+							continue
+						}
+						eml.Mailboxes = []string{}
+						for id := range v.MailboxIDs {
+							eml.Mailboxes = append(eml.Mailboxes, string(id))
+						}
+						eml.Keywords = []string{}
+						for id := range v.Keywords {
+							eml.Keywords = append(eml.Keywords, string(id))
+						}
+					}
+					b, err := msgpack.Marshal(eml)
 					if err != nil {
-						c.Log("Couldn't find id %q", string(key))
+						c.Log("Couldn't encode email: %v", err)
 						continue
 					}
-					err = msgpack.Unmarshal(val, &eml)
+					err = emlBucket.Put([]byte(v.ID), b)
 					if err != nil {
-						c.Log("Couldn't decode: %s", string(key))
+						c.Log("Couldn't cache email: %v", err)
 						continue
 					}
-					eml.Mailboxes = []string{}
-					for id := range v.MailboxIDs {
-						eml.Mailboxes = append(eml.Mailboxes, string(id))
-					}
-					eml.Keywords = []string{}
-					for id := range v.Keywords {
-						eml.Keywords = append(eml.Keywords, string(id))
-					}
+					// TODO: send email to connections
 				}
-				b, err := msgpack.Marshal(eml)
-				if err != nil {
-					c.Log("Couldn't encode email: %v", err)
-					continue
-				}
-				err = c.db.Put(key, b, nil)
-				if err != nil {
-					c.Log("Couldn't cache email: %v", err)
-					continue
-				}
-				// TODO: send email to connections
+				c.Log("Email state updated to: %q", arg.State)
+				stateBucket.Put(stateEmail, []byte(arg.State))
+			case *email.QueryResponse:
+				toFetch = arg.IDs
 			}
-			c.Log("Email state updated to: %q", arg.State)
-			c.db.Put(stateEmail, []byte(arg.State), nil)
-		case *email.QueryResponse:
-			c.fetchEmails(acct, arg.IDs)
+		}
+		return nil
+	})
+	if len(toFetch) > 0 {
+		err := c.fetchEmails(acct, toFetch)
+		if err != nil {
+			c.Log("error: %v", err)
 		}
 	}
 }
 
 func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 	toFetch := make([]jmap.ID, 0, len(ids))
-	opt := &opt.ReadOptions{DontFillCache: true}
-	for _, id := range ids {
-		key := append(emailPrefix, []byte(id)...)
-		val, _ := c.db.Get(key, opt)
-		if len(val) > 0 {
-			continue
+	err := c.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(emailPrefix)
+		if bucket == nil {
+			return bbolt.ErrBucketNotFound
 		}
-		toFetch = append(toFetch, id)
+		for _, id := range ids {
+			val := bucket.Get([]byte(id))
+			if len(val) > 0 {
+				continue
+			}
+			toFetch = append(toFetch, id)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if len(toFetch) == 0 {
 		return nil
@@ -412,50 +469,71 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 		if err != nil {
 			return err
 		}
-		for _, resp := range r.Responses {
-			switch arg := resp.Args.(type) {
-			case *email.GetResponse:
-				c.Log("Fetched emails: %d of %d", end, len(toFetch))
-				for _, v := range arg.List {
-					key := append(emailPrefix, []byte(v.ID)...)
-					eml := jmapToMsgpackEmail(v)
-					b, err := msgpack.Marshal(eml)
-					if err != nil {
-						c.Log("Couldn't encode email: %v", err)
-						continue
+		err = c.db.Update(func(tx *bbolt.Tx) error {
+			emlBucket, err := tx.CreateBucketIfNotExists(emailPrefix)
+			if err != nil {
+				return err
+			}
+			stateBucket, err := tx.CreateBucketIfNotExists([]byte("state"))
+			if err != nil {
+				return err
+			}
+			for _, resp := range r.Responses {
+				switch arg := resp.Args.(type) {
+				case *email.GetResponse:
+					c.Log("Fetched emails: %d of %d", end, len(toFetch))
+					for _, v := range arg.List {
+						eml := jmapToMsgpackEmail(v)
+						b, err := msgpack.Marshal(eml)
+						if err != nil {
+							c.Log("Couldn't encode email: %v", err)
+							continue
+						}
+						err = emlBucket.Put([]byte(v.ID), b)
+						if err != nil {
+							c.Log("Couldn't cache email: %v", err)
+							continue
+						}
 					}
-					err = c.db.Put(key, b, nil)
-					if err != nil {
-						c.Log("Couldn't cache email: %v", err)
-						continue
+					if firstState == "" {
+						firstState = arg.State
 					}
-				}
-				if firstState == "" {
-					firstState = arg.State
 				}
 			}
+			if end >= len(toFetch) {
+				// Save state in the last request
+				c.Log("Email state updated to: %q", firstState)
+				stateBucket.Put(stateEmail, []byte(firstState))
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
-	}
-	if firstState != "" {
-		c.Log("Email state updated to: %q", firstState)
-		c.db.Put(stateEmail, []byte(firstState), nil)
 	}
 	return nil
 }
 
 func (c *JmapClient) ListMailboxes() ([]Mailbox, error) {
-	slice := util.BytesPrefix(mailboxPrefix)
-	iter := c.db.NewIterator(slice, nil)
-	defer iter.Release()
-
 	result := []Mailbox{}
-	for iter.Next() {
-		mbox := Mailbox{}
-		err := msgpack.Unmarshal(iter.Value(), &mbox)
-		if err != nil {
-			return result, err
+	err := c.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(mailboxPrefix)
+		if bucket == nil {
+			return bbolt.ErrBucketNotFound
 		}
-		result = append(result, mbox)
+		bucket.ForEach(func(k, v []byte) error {
+			mbox := Mailbox{}
+			err := msgpack.Unmarshal(v, &mbox)
+			if err != nil {
+				return err
+			}
+			result = append(result, mbox)
+			return nil
+		})
+		return nil
+	})
+	if err != nil {
+		return []Mailbox{}, err
 	}
 	return result, nil
 }
@@ -502,7 +580,7 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		ReplyTo:    jmapToMsgpackAddressList(v.ReplyTo),
 		Subject:    v.Subject,
 		Mailboxes:  mboxes,
-		Date:       date.Format(time.RFC822Z),
+		Date:       date.Format(time.RFC3339),
 		Keywords:   keywords,
 		References: v.References,
 		InReplyTo:  inReplyTo,
@@ -522,4 +600,55 @@ func jmapToMsgpackAddressList(jlist []*mail.Address) []Address {
 		result = append(result, addr)
 	}
 	return result
+}
+
+func (c *JmapClient) Search(query []string) ([]Email, error) {
+	start := time.Now()
+	mboxes, err := c.ListMailboxes()
+	if err != nil {
+		return []Email{}, err
+	}
+	id := ""
+	for _, mbox := range mboxes {
+		if mbox.Name == query[0] {
+			id = mbox.Id
+			break
+		}
+	}
+	if id == "" {
+		return []Email{}, fmt.Errorf("no mailbox found")
+	}
+	count := 0
+	result := []Email{}
+	err = c.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(emailPrefix)
+		if bucket == nil {
+			return bbolt.ErrBucketNotFound
+		}
+		if err != nil {
+			return err
+		}
+		bucket.ForEach(func(k, v []byte) error {
+			count += 1
+			eml := Email{}
+			err := msgpack.Unmarshal(v, &eml)
+			if err != nil {
+				return err
+			}
+			for _, mbox := range eml.Mailboxes {
+				if mbox == id {
+					result = append(result, eml)
+					return nil
+				}
+			}
+			return nil
+		})
+		return nil
+	})
+	if err != nil {
+		return []Email{}, err
+	}
+	c.Log("Search: elapsed=%s, candidates=%d, results=%d", time.Since(start), count, len(result))
+
+	return result, nil
 }
