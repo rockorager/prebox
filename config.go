@@ -1,4 +1,4 @@
-package keywork
+package prebox
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ func LoadConfig() ([]Config, error) {
 		}
 		cfgDir = path.Join(homeDir, ".config")
 	}
-	p := path.Join(cfgDir, "keywork", "config.scfg")
+	p := path.Join(cfgDir, "prebox", "config.scfg")
 	block, err := scfg.Load(p)
 	if err != nil {
 		return nil, err

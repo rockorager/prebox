@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"sort"
 
-	"github.com/rockorager/keywork"
+	"github.com/rockorager/prebox"
 	"github.com/spf13/cobra"
 )
 
-func searchCmd(cmd *cobra.Command, args []string) error {
+func listMailboxesCmd(cmd *cobra.Command, args []string) error {
 	enc, dec, err := connect("")
 	if err != nil {
 		return err
@@ -16,8 +15,8 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 	msg := []interface{}{
 		0,
 		1,
-		"search",
-		args,
+		"list_mailboxes",
+		[]interface{}{},
 	}
 	if err := enc.Encode(msg); err != nil {
 		return err
@@ -48,7 +47,7 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if method != "search" {
+	if method != "list_mailboxes" {
 		return fmt.Errorf("rpc error: ")
 	}
 
@@ -57,20 +56,23 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	emls := make([]keywork.Email, 0, argLen)
 	for i := 0; i < argLen; i += 1 {
-		eml := keywork.Email{}
-		err := dec.Decode(&eml)
+		mbox := prebox.Mailbox{}
+		err := dec.Decode(&mbox)
 		if err != nil {
 			return err
 		}
-		emls = append(emls, eml)
+		fmt.Println(mbox.Name)
 	}
-	sort.Slice(emls, func(i, j int) bool {
-		return emls[i].Date < emls[j].Date
-	})
-	for _, eml := range emls {
-		fmt.Printf("(%s) %s\n", eml.Date, eml.Subject)
-	}
+
 	return nil
+}
+
+func printMailboxes(parent string, mboxes []prebox.Mailbox) {
+	for _, mbox := range mboxes {
+		if mbox.ParentId == parent {
+			fmt.Println(mbox.Name)
+			printMailboxes(mbox.Id, mboxes)
+		}
+	}
 }

@@ -1,4 +1,4 @@
-package keywork
+package prebox
 
 import (
 	"encoding/json"
@@ -52,11 +52,11 @@ func NewJmapClient(name string, url *url.URL) (*JmapClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = os.MkdirAll(path.Join(cacheDir, "keywork"), 0o700)
+	err = os.MkdirAll(path.Join(cacheDir, "prebox"), 0o700)
 	if err != nil {
 		return nil, err
 	}
-	dbPath := path.Join(cacheDir, "keywork", name+".db")
+	dbPath := path.Join(cacheDir, "prebox", name+".db")
 	client.Log("Cache db path: %q", dbPath)
 	db, err := bbolt.Open(dbPath, 0o666, nil)
 	if err != nil {

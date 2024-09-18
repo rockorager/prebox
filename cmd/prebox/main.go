@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/rockorager/keywork"
+	"github.com/rockorager/prebox"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +16,8 @@ const addr = ":2113"
 func main() {
 	log.SetFlags(log.Flags() | log.Lmicroseconds)
 	rootCmd := &cobra.Command{
-		Use:   "keywork",
-		Short: "Keywork is an email synchronization tool",
+		Use:   "prebox",
+		Short: "prebox is an email synchronization tool",
 		RunE:  run,
 	}
 
@@ -42,10 +42,10 @@ func main() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	cfgs, err := keywork.LoadConfig()
+	cfgs, err := prebox.LoadConfig()
 	if err != nil {
 		return err
 	}
-	s := keywork.NewServer(cfgs)
+	s := prebox.NewServer(cfgs)
 	return s.ListenAndServe()
 }

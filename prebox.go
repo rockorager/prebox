@@ -1,4 +1,4 @@
-package keywork
+package prebox
 
 import (
 	"bufio"
