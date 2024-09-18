@@ -10,6 +10,7 @@ type SearchCriteria struct {
 	Before             time.Time
 	After              time.Time
 	HasKeyword         string
+	NotKeyword         string
 	And                []SearchCriteria
 	Or                 []SearchCriteria
 	Not                []SearchCriteria
@@ -29,6 +30,9 @@ func (s SearchCriteria) Matches(msg *Email) bool {
 		return s.or(msg)
 	}
 	if !s.hasKeyword(msg) {
+		return s.or(msg)
+	}
+	if !s.notKeyword(msg) {
 		return s.or(msg)
 	}
 	for _, and := range s.And {
@@ -115,4 +119,17 @@ func (s SearchCriteria) hasKeyword(msg *Email) bool {
 		}
 	}
 	return false
+}
+
+// Returns true if the message *does not have* the keyword
+func (s SearchCriteria) notKeyword(msg *Email) bool {
+	if s.NotKeyword == "" {
+		return true
+	}
+	for _, keyword := range msg.Keywords {
+		if s.NotKeyword == keyword {
+			return false
+		}
+	}
+	return true
 }

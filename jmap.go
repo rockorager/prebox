@@ -666,12 +666,23 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 }
 
 func (c *JmapClient) parseSearch(args []string) (SearchCriteria, error) {
-	s := SearchCriteria{}
+	root := SearchCriteria{}
+
+	or := false
 	for _, arg := range args {
 		prefix, term, found := strings.Cut(arg, ":")
 		if !found {
+			switch prefix {
+			case "or", "OR":
+				or = true
+			case "and", "AND":
+				or = false
+			case "not", "NOT":
+				return root, fmt.Errorf("NOT is currently not supported")
+			}
 			continue
 		}
+		s := SearchCriteria{}
 		switch prefix {
 		case "in":
 			mboxes, err := c.ListMailboxes()
@@ -684,7 +695,21 @@ func (c *JmapClient) parseSearch(args []string) (SearchCriteria, error) {
 					break
 				}
 			}
+		case "is":
+			switch term {
+			case "read":
+				s.HasKeyword = "$seen"
+			case "unread":
+				s.NotKeyword = "$seen"
+			}
+		}
+		switch {
+		case or:
+			root.Or = append(root.Or, s)
+			or = false
+		default:
+			root.And = append(root.And, s)
 		}
 	}
-	return s, nil
+	return root, nil
 }
