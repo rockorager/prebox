@@ -581,8 +581,8 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		mboxes = append(mboxes, string(k))
 	}
 	keywords := make([]string, 0, len(v.Keywords))
-	for k := range v.MailboxIDs {
-		keywords = append(keywords, string(k))
+	for k := range v.Keywords {
+		keywords = append(keywords, k)
 	}
 	inReplyTo := ""
 	if len(v.InReplyTo) > 0 {
