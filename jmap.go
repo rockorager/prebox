@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strings"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -628,19 +629,9 @@ func jmapToMsgpackAddressList(jlist []*mail.Address) []Address {
 
 func (c *JmapClient) Search(query []string) ([]Email, error) {
 	start := time.Now()
-	mboxes, err := c.ListMailboxes()
+	s, err := c.parseSearch(query)
 	if err != nil {
 		return []Email{}, err
-	}
-	id := ""
-	for _, mbox := range mboxes {
-		if mbox.Name == query[0] {
-			id = mbox.Id
-			break
-		}
-	}
-	if id == "" {
-		return []Email{}, fmt.Errorf("no mailbox found")
 	}
 	count := 0
 	result := []Email{}
@@ -659,11 +650,8 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 			if err != nil {
 				return err
 			}
-			for _, mbox := range eml.Mailboxes {
-				if mbox == id {
-					result = append(result, eml)
-					return nil
-				}
+			if s.Matches(&eml) {
+				result = append(result, eml)
 			}
 			return nil
 		})
@@ -675,4 +663,28 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 	c.Log("Search: elapsed=%s, candidates=%d, results=%d", time.Since(start), count, len(result))
 
 	return result, nil
+}
+
+func (c *JmapClient) parseSearch(args []string) (SearchCriteria, error) {
+	s := SearchCriteria{}
+	for _, arg := range args {
+		prefix, term, found := strings.Cut(arg, ":")
+		if !found {
+			continue
+		}
+		switch prefix {
+		case "in":
+			mboxes, err := c.ListMailboxes()
+			if err != nil {
+				return s, err
+			}
+			for _, mbox := range mboxes {
+				if mbox.Name == term {
+					s.InMailbox = mbox.Id
+					break
+				}
+			}
+		}
+	}
+	return s, nil
 }

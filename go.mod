@@ -5,6 +5,7 @@ go 1.22.6
 require (
 	git.sr.ht/~emersion/go-scfg v0.0.0-20240128091534-2ae16e782082
 	git.sr.ht/~rockorager/go-jmap v0.5.0
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/spf13/cobra v1.8.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.etcd.io/bbolt v1.3.11
