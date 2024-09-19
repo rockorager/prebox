@@ -1,6 +1,11 @@
 .{
-    .name = "offmap",
+    .name = "prebox",
     .version = "0.0.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .go = .{
+            .url = "../zig4go",
+            .hash = "12205154bbfd7f4541fffa03baa6685f3a823cc326bab574d43ac7deb82e2bf66614",
+        },
+    },
     .paths = .{""},
 }

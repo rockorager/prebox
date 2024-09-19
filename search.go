@@ -5,6 +5,7 @@ import (
 )
 
 type SearchCriteria struct {
+	Terms              []string
 	InMailbox          string
 	InMailboxOtherThan []string
 	Before             time.Time

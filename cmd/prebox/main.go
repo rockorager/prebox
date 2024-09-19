@@ -14,7 +14,7 @@ var errInvalidResponse = errors.New("invalid response")
 const addr = ":2113"
 
 func main() {
-	log.SetFlags(log.Flags() | log.Lmicroseconds)
+	log.SetFlags(log.Flags() | log.Lmicroseconds | log.Lshortfile)
 	rootCmd := &cobra.Command{
 		Use:   "prebox",
 		Short: "prebox is an email synchronization tool",

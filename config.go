@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"git.sr.ht/~emersion/go-scfg"
+	"github.com/rockorager/prebox/log"
 )
 
 type Config struct {
@@ -15,6 +16,8 @@ type Config struct {
 }
 
 func LoadConfig() ([]Config, error) {
+	log.Trace("->LoadConfig")
+	defer log.Trace("<-LoadConfig")
 	cfgDir, err := os.UserConfigDir()
 	if err != nil {
 		homeDir, err := os.UserHomeDir()
