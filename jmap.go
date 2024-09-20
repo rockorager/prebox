@@ -723,6 +723,8 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 	}
 	search := bleve.NewSearchRequest(q)
 	search.Size = math.MaxInt
+	// Presort by the date string, we'll do a timezone aware sort later
+	search.SortBy([]string{"Date"})
 	searchResult, err := c.index.Search(search)
 	if err != nil {
 		return []Email{}, err
