@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/rockorager/prebox"
-	"github.com/rockorager/prebox/log"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +12,6 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	log.Debug("hey")
 	msg := []interface{}{
 		0,
 		1,
