@@ -469,6 +469,8 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 						for id := range v.Keywords {
 							eml.Keywords = append(eml.Keywords, string(id))
 						}
+					} else {
+						eml = jmapToMsgpackEmail(v)
 					}
 					b, err := msgpack.Marshal(eml)
 					if err != nil {
