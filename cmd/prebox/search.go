@@ -72,7 +72,14 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 		if err == nil {
 			dateStr = date.Local().Format(time.DateTime)
 		}
-		fmt.Printf("(%s) %s\n", dateStr, eml.Subject)
+		name := ""
+		if len(eml.From) > 0 {
+			name = eml.From[0].Name
+			if name == "" {
+				name = eml.From[0].Email
+			}
+		}
+		fmt.Printf("\x1b[35m%s \x1b[34m%s\x1b[0m %s\n", dateStr, name, eml.Subject)
 	}
 	return nil
 }
