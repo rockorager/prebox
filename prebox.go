@@ -294,9 +294,6 @@ func (c *Connection) handleSearch(id int, args []interface{}) error {
 	if err != nil {
 		return err
 	}
-	sort.Slice(emls, func(i, j int) bool {
-		return emls[i].Date > emls[j].Date
-	})
 
 	msg := []interface{}{
 		1, // response

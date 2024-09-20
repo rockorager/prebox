@@ -753,6 +753,22 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 	}
 	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
 
+	start = time.Now()
+	// TODO: this is pretty inefficient but decently fast since we are
+	// presorted
+	sort.Slice(result, func(i int, j int) bool {
+		lhs, err := time.Parse(time.RFC3339, result[i].Date)
+		if err != nil {
+			return false
+		}
+		rhs, err := time.Parse(time.RFC3339, result[j].Date)
+		if err != nil {
+			return false
+		}
+		return lhs.After(rhs)
+	})
+	log.Trace("[%s] Sort: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
+
 	return result, nil
 }
 
