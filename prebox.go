@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sort"
 	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
