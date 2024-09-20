@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rockorager/prebox"
 	"github.com/spf13/cobra"
@@ -66,7 +67,12 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 		emls = append(emls, eml)
 	}
 	for _, eml := range emls {
-		fmt.Printf("(%s) %s\n", eml.Date, eml.Subject)
+		dateStr := eml.Date
+		date, err := time.Parse(time.RFC3339, eml.Date)
+		if err == nil {
+			dateStr = date.Local().Format(time.DateTime)
+		}
+		fmt.Printf("(%s) %s\n", dateStr, eml.Subject)
 	}
 	return nil
 }
