@@ -100,16 +100,49 @@ func NewJmapClient(name string, url *url.URL) (*JmapClient, error) {
 func newIndexMapping() (mapping.IndexMapping, error) {
 	englishTextFieldMapping := bleve.NewTextFieldMapping()
 	englishTextFieldMapping.Analyzer = "en"
-	englishTextFieldMapping.Store = true
+	englishTextFieldMapping.Store = false
+
+	keywordFieldMapping := bleve.NewKeywordFieldMapping()
+	keywordFieldMapping.Store = false
+
+	dateFieldMapping := bleve.NewDateTimeFieldMapping()
+	dateFieldMapping.DateFormat = optional.Name
+	dateFieldMapping.Store = false
+
+	numericMapping := bleve.NewNumericFieldMapping()
+	numericMapping.Store = false
 
 	emailMapping := bleve.NewDocumentMapping()
+	emailMapping.StructTagKey = "msgpack"
+	emailMapping.AddFieldMappingsAt("subject", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("from.name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("from.email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("to.name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("to.email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("cc.name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("cc.email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("bcc.name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("bcc.email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("reply_to.name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("reply_to.email", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("body", englishTextFieldMapping)
 
-	mapping := bleve.NewIndexMapping()
-	mapping.AddDocumentMapping("email", emailMapping)
+	emailMapping.AddFieldMappingsAt("date", dateFieldMapping)
+	emailMapping.AddFieldMappingsAt("size", numericMapping)
 
+	emailMapping.AddFieldMappingsAt("type", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("message_id", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("references", keywordFieldMapping)
+
+	emailMapping.AddFieldMappingsAt("mailbox_ids", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("keywords", keywordFieldMapping)
+
+	mapping := bleve.NewIndexMapping()
 	mapping.TypeField = "type"
 	mapping.DefaultAnalyzer = "en"
+
+	mapping.AddDocumentMapping("email", emailMapping)
+
 	return mapping, nil
 }
 
