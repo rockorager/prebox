@@ -17,7 +17,9 @@ import (
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
 	"github.com/blevesearch/bleve/v2"
+	"github.com/blevesearch/bleve/v2/analysis/datetime/optional"
 	"github.com/blevesearch/bleve/v2/mapping"
+	"github.com/blevesearch/bleve/v2/search/query"
 	"github.com/rockorager/prebox/log"
 	"github.com/rockorager/zig4go/assert"
 	"github.com/vmihailenco/msgpack/v5"
@@ -38,10 +40,10 @@ var emailProperties = []string{
 	"id", "blobId", "mailboxIds", "keywords", "size",
 	"receivedAt", "messageId", "inReplyTo", "references", "sender", "from",
 	"to", "cc", "replyTo", "subject", "sentAt", "hasAttachment",
-	"textBody", "bodyValues",
+	// "textBody", "bodyValues",
 }
 
-var emailBodyProperties = []string{"partId", "type"}
+// var emailBodyProperties = []string{"partId", "type"}
 
 type indexedEmail struct {
 	Type string
@@ -58,7 +60,7 @@ type JmapClient struct {
 }
 
 func NewJmapClient(name string, url *url.URL) (*JmapClient, error) {
-	assert.True(url != nil, "url was nil")
+	assert.True(url != nil)
 	client := &JmapClient{
 		name: name,
 		url:  url,
@@ -104,41 +106,42 @@ func newIndexMapping() (mapping.IndexMapping, error) {
 
 	keywordFieldMapping := bleve.NewKeywordFieldMapping()
 	keywordFieldMapping.Store = false
+	keywordFieldMapping.IncludeInAll = false
 
 	dateFieldMapping := bleve.NewDateTimeFieldMapping()
 	dateFieldMapping.DateFormat = optional.Name
 	dateFieldMapping.Store = false
+	dateFieldMapping.IncludeInAll = false
 
 	numericMapping := bleve.NewNumericFieldMapping()
 	numericMapping.Store = false
 
 	emailMapping := bleve.NewDocumentMapping()
-	emailMapping.StructTagKey = "msgpack"
-	emailMapping.AddFieldMappingsAt("subject", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("from.name", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("from.email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("to.name", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("to.email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("cc.name", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("cc.email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("bcc.name", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("bcc.email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("reply_to.name", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("reply_to.email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("body", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Subject", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("From.Name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("From.Email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("To.Name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("To.Email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Cc.Name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Cc.Email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Bcc.Name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Bcc.Email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("ReplyTo.Name", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("ReplyTo.Email", englishTextFieldMapping)
 
-	emailMapping.AddFieldMappingsAt("date", dateFieldMapping)
-	emailMapping.AddFieldMappingsAt("size", numericMapping)
+	emailMapping.AddFieldMappingsAt("Date", dateFieldMapping)
+	emailMapping.AddFieldMappingsAt("Size", numericMapping)
 
-	emailMapping.AddFieldMappingsAt("type", keywordFieldMapping)
-	emailMapping.AddFieldMappingsAt("message_id", keywordFieldMapping)
-	emailMapping.AddFieldMappingsAt("references", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("Type", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("MessageId", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("InReplyTo", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("References", keywordFieldMapping)
 
-	emailMapping.AddFieldMappingsAt("mailbox_ids", keywordFieldMapping)
-	emailMapping.AddFieldMappingsAt("keywords", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("Mailboxes", keywordFieldMapping)
+	emailMapping.AddFieldMappingsAt("Keywords", keywordFieldMapping)
 
 	mapping := bleve.NewIndexMapping()
-	mapping.TypeField = "type"
+	mapping.TypeField = "Type"
 	mapping.DefaultAnalyzer = "en"
 
 	mapping.AddDocumentMapping("email", emailMapping)
@@ -153,8 +156,8 @@ func (c *JmapClient) Name() string {
 // Connect to the remote server. If the Session object is available in the
 // cache, then this only sets up the Listener for remote changes
 func (c *JmapClient) Connect() error {
-	assert.True(c.url != nil, "url is nil")
-	assert.True(c.url.Host != "", "host is empty")
+	assert.True(c.url != nil)
+	assert.True(c.url.Host != "")
 	u := c.url
 	c.cl = &jmap.Client{
 		SessionEndpoint: "https://" + u.Host + u.Path,
@@ -208,9 +211,9 @@ func (c *JmapClient) Connect() error {
 
 // returns the primary email account. Asserts that the account exists
 func (c *JmapClient) primaryAccount() jmap.ID {
-	assert.True(c.cl != nil, "client is nil")
+	assert.True(c.cl != nil)
 	acct := c.cl.Session.PrimaryAccounts[mail.URI]
-	assert.True(acct != "", "no mail account")
+	assert.True(acct != "")
 	return acct
 }
 
@@ -237,7 +240,7 @@ func (c *JmapClient) maybeRefreshSession(state string) error {
 
 // Updates the session and saves it in the cache
 func (c *JmapClient) refreshSession() error {
-	assert.True(c.cl != nil, "client is nil")
+	assert.True(c.cl != nil)
 	c.cl.Authenticate()
 	b, err := json.Marshal(c.cl.Session)
 	if err != nil {
@@ -278,7 +281,7 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 			var val []byte
 			c.db.View(func(tx *bbolt.Tx) error {
 				bucket := tx.Bucket([]byte("state"))
-				assert.True(bucket != nil, "state bucket is nil")
+				assert.True(bucket != nil)
 				val = bucket.Get(stateMailbox)
 				return nil
 			})
@@ -318,7 +321,7 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 			var val []byte
 			c.db.View(func(tx *bbolt.Tx) error {
 				bucket := tx.Bucket([]byte("state"))
-				assert.True(bucket != nil, "state bucket is nil")
+				assert.True(bucket != nil)
 				val = bucket.Get(stateEmail)
 				return nil
 			})
@@ -377,13 +380,15 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 	c.db.Update(func(tx *bbolt.Tx) error {
 		// These can only error in a catastrophic way
 		mboxBucket, err := tx.CreateBucketIfNotExists(mailboxPrefix)
-		assert.True(err == nil, "couldn't create bucket: %v", err)
+		assert.True(err == nil)
 
 		emlBucket, err := tx.CreateBucketIfNotExists(emailPrefix)
-		assert.True(err == nil, "couldn't create bucket: %v", err)
+		assert.True(err == nil)
 
 		stateBucket, err := tx.CreateBucketIfNotExists([]byte("state"))
-		assert.True(err == nil, "couldn't create bucket: %v", err)
+		assert.True(err == nil)
+
+		batch := c.index.NewBatch()
 
 		for _, resp := range r.Responses {
 			switch arg := resp.Args.(type) {
@@ -425,7 +430,10 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 					err := emlBucket.Delete(key)
 					if err != nil {
 						log.Error("[%s] Couldn't delete email: %v", c.name, err)
-						continue
+					}
+					batch.Delete(string(v))
+					if err != nil {
+						log.Error("[%s] Couldn't delete email: %v", c.name, err)
 					}
 				}
 			case *email.GetResponse:
@@ -472,6 +480,11 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 						log.Error("[%s] Couldn't cache email: %s", c.name, err)
 						continue
 					}
+					err = batch.Index(eml.Id, eml)
+					if err != nil {
+						log.Error("[%s] Couldn't index email: %s", c.name, err)
+						continue
+					}
 					// TODO: send email to connections
 				}
 				log.Trace("[%s] Email state updated to: %q", c.name, arg.State)
@@ -480,7 +493,7 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 				toFetch = arg.IDs
 			}
 		}
-		return nil
+		return c.index.Batch(batch)
 	})
 	if len(toFetch) > 0 {
 		err := c.fetchEmails(acct, toFetch)
@@ -492,7 +505,7 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 
 func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 	toFetch := make([]jmap.ID, 0, len(ids))
-	assert.True(c.db != nil, "db is nil")
+	assert.True(c.db != nil)
 	err := c.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(emailPrefix)
 		if bucket == nil {
@@ -528,11 +541,11 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 		i = end
 		req := jmap.Request{}
 		req.Invoke(&email.Get{
-			Account:             acct,
-			IDs:                 batch,
-			Properties:          emailProperties,
-			FetchTextBodyValues: true,
-			BodyProperties:      emailBodyProperties,
+			Account:    acct,
+			IDs:        batch,
+			Properties: emailProperties,
+			// FetchTextBodyValues: true,
+			// BodyProperties:      emailBodyProperties,
 		})
 		r, err := c.doRequest(&req)
 		if err != nil {
@@ -551,7 +564,7 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 			for _, resp := range r.Responses {
 				switch arg := resp.Args.(type) {
 				case *email.GetResponse:
-					log.Trace("[%s] Fetched %d new emails", c.name, end, len(toFetch))
+					log.Trace("[%s] Fetched %d of %d new emails", c.name, end, len(toFetch))
 					for _, v := range arg.List {
 						eml := jmapToMsgpackEmail(v)
 						b, err := msgpack.Marshal(eml)
@@ -564,28 +577,10 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 							log.Error("[%s] Couldn't cache email: %v", c.name, err)
 							continue
 						}
-						if len(v.TextBody) == 0 {
+						err = batch.Index(eml.Id, eml)
+						if err != nil {
+							log.Error("[%s] Couldn't index email: %v", c.name, err)
 							continue
-						}
-						part := v.TextBody[0]
-						value, ok := v.BodyValues[part.PartID]
-						if !ok {
-							continue
-						}
-						switch part.Type {
-						case "text/plain":
-							indEml := indexedEmail{
-								Type: "email",
-								Body: value.Value,
-							}
-							err := batch.Index(string(v.ID), indEml)
-							if err != nil {
-								log.Error("[%s] indexed error: %v", c.name, err)
-							}
-						case "text/html":
-						// TODO: strip tags
-						default:
-							log.Warn("[%s] unhandled type: %s", c.name, err)
 						}
 					}
 					if firstState == "" {
@@ -687,7 +682,9 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 	if v.SentAt != nil {
 		date = v.SentAt
 	}
+	assert.True(date != nil)
 	eml := Email{
+		Type:       "email",
 		Id:         string(v.ID),
 		From:       jmapToMsgpackAddressList(v.From),
 		To:         jmapToMsgpackAddressList(v.To),
@@ -720,104 +717,110 @@ func jmapToMsgpackAddressList(jlist []*mail.Address) []Address {
 
 func (c *JmapClient) Search(query []string) ([]Email, error) {
 	start := time.Now()
-	s, err := c.parseSearch(query)
+	q, err := c.parseSearch(query)
 	if err != nil {
 		return []Email{}, err
 	}
-	q := bleve.NewMatchQuery(strings.Join(s.Terms, " "))
-	sreq := bleve.NewSearchRequest(q)
-	sreq.Fields = append(sreq.Fields, "Body")
-	sreq.Size = math.MaxInt
-	sresult, err := c.index.Search(sreq)
+	search := bleve.NewSearchRequest(q)
+	search.Size = math.MaxInt
+	searchResult, err := c.index.Search(search)
 	if err != nil {
 		return []Email{}, err
 	}
-	fmt.Println(len(sresult.Hits))
-	for _, hit := range sresult.Hits {
-		body, ok := hit.Fields["Body"]
-		if !ok {
-			continue
-		}
-		fmt.Println(body)
-	}
-	count := 0
-	result := []Email{}
+	result := make([]Email, 0, len(searchResult.Hits))
 	err = c.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(emailPrefix)
 		if bucket == nil {
 			return bbolt.ErrBucketNotFound
 		}
-		if err != nil {
-			return err
-		}
-		bucket.ForEach(func(k, v []byte) error {
-			count += 1
+		for _, hit := range searchResult.Hits {
+			val := bucket.Get([]byte(hit.ID))
+			if len(val) == 0 {
+				log.Debug("[%s] ID %q not found", c.name, hit.ID)
+				continue
+			}
 			eml := Email{}
-			err := msgpack.Unmarshal(v, &eml)
+			err := msgpack.Unmarshal(val, &eml)
 			if err != nil {
 				return err
 			}
-			if s.Matches(&eml) {
-				result = append(result, eml)
-			}
-			return nil
-		})
+			result = append(result, eml)
+		}
 		return nil
 	})
 	if err != nil {
 		return []Email{}, err
 	}
-	log.Trace("[%s] Search: elapsed=%s, candidates=%d, results=%d", c.name, time.Since(start), count, len(result))
+	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
 
 	return result, nil
 }
 
-func (c *JmapClient) parseSearch(args []string) (SearchCriteria, error) {
-	root := SearchCriteria{}
-
-	or := false
+func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
+	root := bleve.NewBooleanQuery()
+	// or := false
 	for _, arg := range args {
 		prefix, term, found := strings.Cut(arg, ":")
 		if !found {
 			switch prefix {
 			case "or", "OR":
-				or = true
+				// or = true
 			case "and", "AND":
-				or = false
+				// or = false
 			case "not", "NOT":
 				return root, fmt.Errorf("NOT is currently not supported")
 			default:
-				root.Terms = append(root.Terms, prefix)
+				q := bleve.NewMatchQuery(prefix)
+				root.AddMust(q)
 			}
 			continue
 		}
-		s := SearchCriteria{}
 		switch prefix {
 		case "in":
 			mboxes, err := c.ListMailboxes()
 			if err != nil {
-				return s, err
+				return root, err
 			}
 			for _, mbox := range mboxes {
 				if mbox.Name == term {
-					s.InMailbox = mbox.Id
+					q := bleve.NewTermQuery(mbox.Id)
+					q.SetField("Mailboxes")
+					root.AddMust(q)
 					break
 				}
 			}
 		case "is":
 			switch term {
 			case "read":
-				s.HasKeyword = "$seen"
+				q := bleve.NewTermQuery("$seen")
+				q.SetField("Keywords")
+				root.AddMust(q)
 			case "unread":
-				s.NotKeyword = "$seen"
+				q := bleve.NewTermQuery("$seen")
+				q.SetField("Keywords")
+				root.AddMustNot(q)
 			}
-		}
-		switch {
-		case or:
-			root.Or = append(root.Or, s)
-			or = false
-		default:
-			root.And = append(root.And, s)
+		case "from":
+			q := bleve.NewMatchQuery(term)
+			q.SetField("From")
+			root.AddMust(q)
+		case "to":
+			to := bleve.NewMatchQuery(term)
+			to.SetField("To")
+			cc := bleve.NewMatchQuery(term)
+			cc.SetField("Cc")
+			bcc := bleve.NewMatchQuery(term)
+			bcc.SetField("Bcc")
+			q := bleve.NewDisjunctionQuery(to, cc, bcc)
+			root.AddMust(q)
+		case "tonotcc":
+			to := bleve.NewMatchQuery(term)
+			to.SetField("To")
+			root.AddMust(to)
+		case "subject":
+			q := bleve.NewMatchQuery(term)
+			q.SetField("Subject")
+			root.AddMust(q)
 		}
 	}
 	return root, nil

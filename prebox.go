@@ -28,6 +28,7 @@ type Mailbox struct {
 }
 
 type Email struct {
+	Type       string    `msgpack:"type"`
 	Id         string    `msgpack:"id"`
 	Subject    string    `msgpack:"subject"`
 	MessageId  string    `msgpack:"message_id"`

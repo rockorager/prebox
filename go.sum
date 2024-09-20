@@ -85,6 +85,10 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rockorager/zig4go v0.0.0-20240919160919-d603e7f04bf8 h1:pQimyujrhDZNj8VjPcaZkeaKBxsE+VHP+MMhgRpIxXw=
 github.com/rockorager/zig4go v0.0.0-20240919160919-d603e7f04bf8/go.mod h1:Gn2B0g0zle/Le2ga4BVQT+XCGbcC5Ans2X/K4ZMjw0I=
+github.com/rockorager/zig4go v0.0.0-20240920134030-b5255d534812 h1:brT30LbL4rMzLECx+h4Ikfu4pVrtGPRVu1IYTUVDMxI=
+github.com/rockorager/zig4go v0.0.0-20240920134030-b5255d534812/go.mod h1:Gn2B0g0zle/Le2ga4BVQT+XCGbcC5Ans2X/K4ZMjw0I=
+github.com/rockorager/zig4go v0.0.0-20240920134320-781cdb3972f1 h1:eg8vNxpHopdirZB+qG6KAJjTOgqVDkWR1GG7Yb2m/uM=
+github.com/rockorager/zig4go v0.0.0-20240920134320-781cdb3972f1/go.mod h1:Gn2B0g0zle/Le2ga4BVQT+XCGbcC5Ans2X/K4ZMjw0I=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/spf13/cobra v1.8.1 h1:e5/vxKd/rZsfSJMUX1agtjeTDf+qv1/JdBF8gg5k9ZM=
 github.com/spf13/cobra v1.8.1/go.mod h1:wHxEcudfqmLYa8iTfL+OuZPbBZkmvliBWKIezN3kD9Y=
