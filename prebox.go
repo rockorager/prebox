@@ -170,7 +170,7 @@ func (c *Connection) Serve() error {
 					continue
 				}
 			default:
-				c.writeErrorResponse(id, method, fmt.Errorf("unhandled method", method))
+				c.writeErrorResponse(id, method, fmt.Errorf("unhandled method: %s", method))
 			}
 		case 1: // Response
 		case 2: // Notification
