@@ -206,14 +206,35 @@ func (c *JmapClient) Connect() error {
 		}
 	}
 
+	go c.listen()
+
+	return nil
+}
+
+func (c *JmapClient) listen() {
 	es := push.EventSource{
 		Client:  c.cl,
 		Handler: c.debounceStateChange,
 	}
-	go es.Listen()
-
-	// j.findEmails()
-	return nil
+	var delay time.Duration
+	for {
+		// Sleep the delay and, since it can be 0, set it to some
+		// new minimum value (1 second)
+		time.Sleep(delay)
+		delay = max(delay, 1*time.Second)
+		start := time.Now()
+		err := es.Listen()
+		if err != nil {
+			log.Error("[%s] %v", err)
+		}
+		log.Warn("[%s] Connection lost. Reconnecting in %s...", delay)
+		delay = min(delay*2, 60*time.Second)
+		if time.Since(start) > 120*time.Second {
+			// Reset delay to 1 second if we were conencted for more
+			// than 120 seconds
+			delay = 1 * time.Second
+		}
+	}
 }
 
 // returns the primary email account. Asserts that the account exists
