@@ -20,6 +20,7 @@ import (
 	"github.com/blevesearch/bleve/v2/analysis/datetime/optional"
 	"github.com/blevesearch/bleve/v2/mapping"
 	"github.com/blevesearch/bleve/v2/search/query"
+	strip "github.com/grokify/html-strip-tags-go"
 	"github.com/rockorager/prebox/log"
 	"github.com/rockorager/zig4go/assert"
 	"github.com/vmihailenco/msgpack/v5"
@@ -40,10 +41,10 @@ var emailProperties = []string{
 	"id", "blobId", "mailboxIds", "keywords", "size",
 	"receivedAt", "messageId", "inReplyTo", "references", "sender", "from",
 	"to", "cc", "replyTo", "subject", "sentAt", "hasAttachment",
-	// "textBody", "bodyValues",
+	"textBody", "bodyValues",
 }
 
-// var emailBodyProperties = []string{"partId", "type"}
+var emailBodyProperties = []string{"partId", "type"}
 
 type indexedEmail struct {
 	Type string
@@ -116,6 +117,8 @@ func newIndexMapping() (mapping.IndexMapping, error) {
 	numericMapping := bleve.NewNumericFieldMapping()
 	numericMapping.Store = false
 
+	ignoreField := bleve.NewDocumentDisabledMapping()
+
 	emailMapping := bleve.NewDocumentMapping()
 	emailMapping.AddFieldMappingsAt("Subject", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("From.Name", englishTextFieldMapping)
@@ -128,17 +131,21 @@ func newIndexMapping() (mapping.IndexMapping, error) {
 	emailMapping.AddFieldMappingsAt("Bcc.Email", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("ReplyTo.Name", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("ReplyTo.Email", englishTextFieldMapping)
+	emailMapping.AddFieldMappingsAt("Body.Value", englishTextFieldMapping)
 
 	emailMapping.AddFieldMappingsAt("Date", dateFieldMapping)
 	emailMapping.AddFieldMappingsAt("Size", numericMapping)
 
-	emailMapping.AddFieldMappingsAt("Type", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("MessageId", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("InReplyTo", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("References", keywordFieldMapping)
 
 	emailMapping.AddFieldMappingsAt("Mailboxes", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("Keywords", keywordFieldMapping)
+
+	emailMapping.AddSubDocumentMapping("Body.MimeType", ignoreField)
+	emailMapping.AddSubDocumentMapping("Type", ignoreField)
+	emailMapping.AddSubDocumentMapping("Id", ignoreField)
 
 	mapping := bleve.NewIndexMapping()
 	mapping.TypeField = "Type"
@@ -482,12 +489,14 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 						log.Error("[%s] Couldn't cache email: %s", c.name, err)
 						continue
 					}
+					// TODO: send email to connections
+
+					sanitizeBody(&eml)
 					err = batch.Index(eml.Id, eml)
 					if err != nil {
 						log.Error("[%s] Couldn't index email: %s", c.name, err)
 						continue
 					}
-					// TODO: send email to connections
 				}
 				log.Trace("[%s] Email state updated to: %q", c.name, arg.State)
 				stateBucket.Put(stateEmail, []byte(arg.State))
@@ -543,11 +552,11 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 		i = end
 		req := jmap.Request{}
 		req.Invoke(&email.Get{
-			Account:    acct,
-			IDs:        batch,
-			Properties: emailProperties,
-			// FetchTextBodyValues: true,
-			// BodyProperties:      emailBodyProperties,
+			Account:             acct,
+			IDs:                 batch,
+			Properties:          emailProperties,
+			FetchTextBodyValues: true,
+			BodyProperties:      emailBodyProperties,
 		})
 		r, err := c.doRequest(&req)
 		if err != nil {
@@ -685,6 +694,22 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		date = v.SentAt
 	}
 	assert.True(date != nil)
+
+	var body MimePart
+	for _, part := range v.TextBody {
+		assert.True(part != nil)
+		val, ok := v.BodyValues[part.PartID]
+		if !ok {
+			log.Warn("Part not found: %s", part.PartID)
+			continue
+		}
+		if val.IsEncodingProblem {
+			break
+		}
+		body.Value = val.Value
+		body.MimeType = part.Type
+		break
+	}
 	eml := Email{
 		Type:       "email",
 		Id:         string(v.ID),
@@ -701,6 +726,7 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		InReplyTo:  inReplyTo,
 		MessageId:  messageId,
 		Size:       uint(v.Size),
+		Body:       body,
 	}
 	return eml
 }
@@ -854,4 +880,12 @@ func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
 		}
 	}
 	return root, nil
+}
+
+func sanitizeBody(eml *Email) {
+	switch eml.Body.MimeType {
+	case "text/html":
+		body := strip.StripTags(eml.Body.Value)
+		eml.Body.Value = body
+	}
 }

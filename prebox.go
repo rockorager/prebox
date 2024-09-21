@@ -33,6 +33,7 @@ type Email struct {
 	MessageId  string    `msgpack:"message_id"`
 	InReplyTo  string    `msgpack:"in_reply_to"`
 	Date       string    `msgpack:"date"`
+	Body       MimePart  `msgpack:"body,omitempty"`
 	References []string  `msgpack:"references"`
 	ReplyTo    []Address `msgpack:"reply_to"`
 	From       []Address `msgpack:"from"`
@@ -42,6 +43,11 @@ type Email struct {
 	Mailboxes  []string  `msgpack:"mailbox_ids"`
 	Keywords   []string  `msgpack:"keywords"`
 	Size       uint      `msgpack:"size"`
+}
+
+type MimePart struct {
+	MimeType string `msgpack:"mime_type"`
+	Value    string `msgpack:"value"`
 }
 
 type Address struct {
