@@ -825,17 +825,22 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 
 func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
 	root := bleve.NewBooleanQuery()
-	// or := false
+	const (
+		and = iota
+		or
+		not
+	)
+	op := and
 	for _, arg := range args {
 		prefix, term, found := strings.Cut(arg, ":")
 		if !found {
 			switch prefix {
-			case "or", "OR":
-				// or = true
+			// case "or", "OR":
+			// 	op = or
 			case "and", "AND":
-				// or = false
+				op = and
 			case "not", "NOT":
-				return root, fmt.Errorf("NOT is currently not supported")
+				op = not
 			default:
 				q := bleve.NewMatchQuery(prefix)
 				root.AddMust(q)
@@ -852,7 +857,15 @@ func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
 				if mbox.Name == term {
 					q := bleve.NewTermQuery(mbox.Id)
 					q.SetField("Mailboxes")
-					root.AddMust(q)
+					switch op {
+					case and:
+						root.AddMust(q)
+					// case or:
+					// 	root.AddMust(q)
+					case not:
+						op = and
+						root.AddMustNot(q)
+					}
 					break
 				}
 			}
