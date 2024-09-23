@@ -523,6 +523,13 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 				stateBucket.Put(stateEmail, []byte(arg.State))
 			case *email.QueryResponse:
 				toFetch = arg.IDs
+			case *jmap.MethodError:
+				switch arg.Type {
+				case "cannotCalculateChanges":
+					log.Error("[%s] TODO: %s", c.name, arg)
+				default:
+					log.Error("[%s] Method error: %s", c.name, arg)
+				}
 			}
 		}
 		return c.index.Batch(batch)
