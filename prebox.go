@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -43,6 +44,25 @@ type Email struct {
 	Mailboxes  []string  `msgpack:"mailbox_ids"`
 	Keywords   []string  `msgpack:"keywords"`
 	Size       uint      `msgpack:"size"`
+}
+
+func (e Email) StrippedSubject() string {
+	subject := strings.TrimSpace(e.Subject)
+	for {
+		if strings.HasPrefix(subject, "Re:") {
+			subject = strings.TrimSpace(subject[3:])
+			continue
+		}
+		return subject
+	}
+}
+
+func (e Email) CombinedReferences() []string {
+	refs := e.References
+	if e.InReplyTo != "" {
+		refs = append(refs, e.InReplyTo)
+	}
+	return refs
 }
 
 type MimePart struct {
@@ -164,6 +184,12 @@ func (c *Connection) Serve() error {
 					continue
 				}
 			case "search":
+				err := c.handleSearch(id, args)
+				if err != nil {
+					c.writeErrorResponse(id, "search", err)
+					continue
+				}
+			case "threads":
 				err := c.handleSearch(id, args)
 				if err != nil {
 					c.writeErrorResponse(id, "search", err)

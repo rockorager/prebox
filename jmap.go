@@ -728,7 +728,7 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		assert.True(part != nil)
 		val, ok := v.BodyValues[part.PartID]
 		if !ok {
-			log.Warn("Part not found: %s", part.PartID)
+			log.Warn("Part not found: %s: BodyValues: %v", part.PartID, v.BodyValues)
 			continue
 		}
 		if val.IsEncodingProblem {
