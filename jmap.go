@@ -831,6 +831,9 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 }
 
 func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
+	if len(args) == 1 && args[0] == "*" {
+		return bleve.NewMatchAllQuery(), nil
+	}
 	root := bleve.NewBooleanQuery()
 	const (
 		and = iota
