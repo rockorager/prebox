@@ -29,10 +29,7 @@ func main() {
 		Use:  "list-mailboxes",
 		RunE: listMailboxesCmd,
 	})
-	rootCmd.AddCommand(&cobra.Command{
-		Use:  "search",
-		RunE: searchCmd,
-	})
+	rootCmd.AddCommand(newSearchCmd())
 
 	err := rootCmd.Execute()
 	if err != nil {

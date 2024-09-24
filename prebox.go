@@ -28,22 +28,23 @@ type Mailbox struct {
 }
 
 type Email struct {
-	Type       string    `msgpack:"type"`
-	Id         string    `msgpack:"id"`
-	Subject    string    `msgpack:"subject"`
-	MessageId  string    `msgpack:"message_id"`
-	InReplyTo  string    `msgpack:"in_reply_to"`
-	Date       string    `msgpack:"date"`
-	Body       MimePart  `msgpack:"body,omitempty"`
-	References []string  `msgpack:"references"`
-	ReplyTo    []Address `msgpack:"reply_to"`
-	From       []Address `msgpack:"from"`
-	To         []Address `msgpack:"to"`
-	Cc         []Address `msgpack:"cc"`
-	Bcc        []Address `msgpack:"bcc"`
-	Mailboxes  []string  `msgpack:"mailbox_ids"`
-	Keywords   []string  `msgpack:"keywords"`
-	Size       uint      `msgpack:"size"`
+	Type         string    `msgpack:"type"`
+	Id           string    `msgpack:"id"`
+	Subject      string    `msgpack:"subject"`
+	MessageId    string    `msgpack:"message_id"`
+	InReplyTo    string    `msgpack:"in_reply_to"`
+	Date         string    `msgpack:"date"`
+	Body         MimePart  `msgpack:"body,omitempty"`
+	References   []string  `msgpack:"references"`
+	ReplyTo      []Address `msgpack:"reply_to"`
+	From         []Address `msgpack:"from"`
+	To           []Address `msgpack:"to"`
+	Cc           []Address `msgpack:"cc"`
+	Bcc          []Address `msgpack:"bcc"`
+	Mailboxes    []string  `msgpack:"mailbox_ids"`
+	Keywords     []string  `msgpack:"keywords"`
+	Size         uint      `msgpack:"size"`
+	TimestampUTC int64     `msgpack:",omitempty"`
 }
 
 func (e Email) StrippedSubject() string {

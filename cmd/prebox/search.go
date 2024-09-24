@@ -2,13 +2,28 @@ package main
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/rockorager/prebox"
 	"github.com/spf13/cobra"
 )
 
+func newSearchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:  "search",
+		RunE: searchCmd,
+	}
+	cmd.Flags().BoolP("reverse", "r", false, "reverse sort order (descending)")
+	return cmd
+}
+
 func searchCmd(cmd *cobra.Command, args []string) error {
+	reverse, err := cmd.Flags().GetBool("reverse")
+	if err != nil {
+		return err
+	}
 	enc, dec, err := connect("")
 	if err != nil {
 		return err
@@ -57,20 +72,44 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	emls := make([]prebox.Email, 0, argLen)
+	emls := make([]*prebox.ThreadedEmail, 0, argLen)
 	for i := 0; i < argLen; i += 1 {
-		eml := prebox.Email{}
-		err := dec.Decode(&eml)
+		eml := &prebox.ThreadedEmail{}
+		err := dec.Decode(eml)
 		if err != nil {
 			return err
 		}
 		emls = append(emls, eml)
 	}
+
+	if reverse {
+		slices.Reverse(emls)
+	}
+	printThread(emls, 0)
+	return nil
+}
+
+func printThread(emls []*prebox.ThreadedEmail, depth int) {
 	for _, eml := range emls {
+		fmt.Print(strings.Repeat("  ", depth))
+		if eml.Email == nil {
+			fmt.Println("[dummy]")
+			printThread(eml.Replies, depth+1)
+			continue
+		}
 		dateStr := eml.Date
 		date, err := time.Parse(time.RFC3339, eml.Date)
+		now := time.Now()
 		if err == nil {
-			dateStr = date.Local().Format(time.DateTime)
+			switch {
+			case now.Before(date.Add(7 * 24 * time.Hour)):
+				dateStr = date.Local().Format("Mon 3:04PM")
+			case now.Before(date.Add(6 * 7 * 24 * time.Hour)):
+				dateStr = date.Local().Format("Jan 2 3:04PM")
+			default:
+				dateStr = date.Local().Format(time.DateOnly)
+
+			}
 		}
 		name := ""
 		if len(eml.From) > 0 {
@@ -79,7 +118,11 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 				name = eml.From[0].Email
 			}
 		}
-		fmt.Printf("\x1b[35m%s \x1b[34m%s\x1b[0m %s\n", dateStr, name, eml.Subject)
+		flag := ""
+		if !slices.Contains(eml.Keywords, "$seen") {
+			flag = "🔵"
+		}
+		fmt.Printf("\x1b[35m%s %s\x1b[34m%s\x1b[0m %s\n", dateStr, flag, name, eml.Subject)
+		printThread(eml.Replies, depth+1)
 	}
-	return nil
 }

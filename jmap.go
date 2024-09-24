@@ -41,7 +41,7 @@ var emailProperties = []string{
 	"id", "blobId", "mailboxIds", "keywords", "size",
 	"receivedAt", "messageId", "inReplyTo", "references", "sender", "from",
 	"to", "cc", "replyTo", "subject", "sentAt", "hasAttachment",
-	"textBody", "bodyValues",
+	// "textBody", "bodyValues",
 }
 
 var emailBodyProperties = []string{"partId", "type"}
@@ -580,11 +580,11 @@ func (c *JmapClient) fetchEmails(acct jmap.ID, ids []jmap.ID) error {
 		i = end
 		req := jmap.Request{}
 		req.Invoke(&email.Get{
-			Account:             acct,
-			IDs:                 batch,
-			Properties:          emailProperties,
-			FetchTextBodyValues: true,
-			BodyProperties:      emailBodyProperties,
+			Account:    acct,
+			IDs:        batch,
+			Properties: emailProperties,
+			// FetchTextBodyValues: true,
+			// BodyProperties:      emailBodyProperties,
 		})
 		r, err := c.doRequest(&req)
 		if err != nil {
@@ -723,21 +723,21 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 	}
 	assert.True(date != nil)
 
-	var body MimePart
-	for _, part := range v.TextBody {
-		assert.True(part != nil)
-		val, ok := v.BodyValues[part.PartID]
-		if !ok {
-			log.Warn("Part not found: %s: BodyValues: %v", part.PartID, v.BodyValues)
-			continue
-		}
-		if val.IsEncodingProblem {
-			break
-		}
-		body.Value = val.Value
-		body.MimeType = part.Type
-		break
-	}
+	// var body MimePart
+	// for _, part := range v.TextBody {
+	// 	assert.True(part != nil)
+	// 	val, ok := v.BodyValues[part.PartID]
+	// 	if !ok {
+	// 		log.Warn("Part not found: %s: BodyValues: %v", part.PartID, v.BodyValues)
+	// 		continue
+	// 	}
+	// 	if val.IsEncodingProblem {
+	// 		break
+	// 	}
+	// 	body.Value = val.Value
+	// 	body.MimeType = part.Type
+	// 	break
+	// }
 	eml := Email{
 		Type:       "email",
 		Id:         string(v.ID),
@@ -754,7 +754,7 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		InReplyTo:  inReplyTo,
 		MessageId:  messageId,
 		Size:       uint(v.Size),
-		Body:       body,
+		// Body:         body,
 	}
 	return eml
 }
