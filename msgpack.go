@@ -10,6 +10,22 @@ func expectString(v interface{}) (string, error) {
 	return str, nil
 }
 
+func expectSliceStrings(v interface{}) ([]string, error) {
+	args, ok := v.([]interface{})
+	if !ok {
+		return []string{}, fmt.Errorf("invalid argument. Expected []string. Got %T", v)
+	}
+	result := make([]string, 0, len(args))
+	for _, arg := range args {
+		s, err := expectString(arg)
+		if err != nil {
+			return []string{}, err
+		}
+		result = append(result, s)
+	}
+	return result, nil
+}
+
 func expectInt(v interface{}) (int, error) {
 	switch v := v.(type) {
 	case int:
@@ -24,6 +40,33 @@ func expectInt(v interface{}) (int, error) {
 		return int(v), nil
 	default:
 		return 0, fmt.Errorf("invalid argument. Expected int. Got %T", v)
+	}
+}
+
+func expectUint(v interface{}) (uint, error) {
+	switch v := v.(type) {
+	case int:
+		return uint(v), nil
+	case int8:
+		return uint(v), nil
+	case int16:
+		return uint(v), nil
+	case int32:
+		return uint(v), nil
+	case int64:
+		return uint(v), nil
+	case uint:
+		return v, nil
+	case uint8:
+		return uint(v), nil
+	case uint16:
+		return uint(v), nil
+	case uint32:
+		return uint(v), nil
+	case uint64:
+		return uint(v), nil
+	default:
+		return 0, fmt.Errorf("invalid argument. Expected uint. Got %T", v)
 	}
 }
 

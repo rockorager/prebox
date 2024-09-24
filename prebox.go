@@ -178,7 +178,7 @@ func (c *Connection) Serve() error {
 					continue
 				}
 			case "threads":
-				err := c.handleSearch(id, args)
+				err := c.handleThreads(id, args)
 				if err != nil {
 					c.writeErrorResponse(id, "search", err)
 					continue
@@ -308,15 +308,22 @@ func (c *Connection) handleSearch(id int, args []interface{}) error {
 	if c.backend == nil {
 		return errNotConnected
 	}
-	query := make([]string, 0, len(args))
-	for _, arg := range args {
-		term, err := expectString(arg)
-		if err != nil {
-			return err
-		}
-		query = append(query, term)
+	if err := expectLen(3, args); err != nil {
+		return err
 	}
-	emls, err := c.backend.Search(query)
+	limit, err := expectInt(args[0])
+	if err != nil {
+		return err
+	}
+	offset, err := expectInt(args[1])
+	if err != nil {
+		return err
+	}
+	query, err := expectSliceStrings(args[2])
+	if err != nil {
+		return err
+	}
+	total, emls, err := c.backend.Search(limit, offset, query)
 	if err != nil {
 		return err
 	}
@@ -325,7 +332,77 @@ func (c *Connection) handleSearch(id int, args []interface{}) error {
 		1, // response
 		id,
 		"search",
-		emls,
+		[]interface{}{
+			total,
+			emls,
+		},
+	}
+	return c.writeMsg(msg)
+}
+
+func (c *Connection) handleThreads(id int, args []interface{}) error {
+	if c.backend == nil {
+		return errNotConnected
+	}
+	if err := expectLen(3, args); err != nil {
+		return err
+	}
+	limit, err := expectInt(args[0])
+	if err != nil {
+		return err
+	}
+	offset, err := expectUint(args[1])
+	if err != nil {
+		return err
+	}
+	query, err := expectSliceStrings(args[2])
+	if err != nil {
+		return err
+	}
+	// we do a search with no limit, and no offset. We want to thread the
+	// entire result, and return a limit / offset combo of the threaded
+	// result
+	_, emls, err := c.backend.Search(-1, 0, query)
+	if err != nil {
+		return err
+	}
+	threads := thread(emls)
+	total := len(threads)
+	var result []*ThreadedEmail
+	switch {
+	case offset == 0:
+		switch {
+		case limit < 0:
+			result = threads
+		case limit < total:
+			result = threads[:limit]
+		default:
+			result = threads
+		}
+	case int(offset) < total:
+		switch {
+		case limit < 0:
+			result = threads[offset:]
+		case limit+int(offset) <= total:
+			result = threads[offset : int(offset)+limit]
+		default:
+			result = threads[offset:]
+		}
+	case int(offset) >= total:
+		result = []*ThreadedEmail{}
+		// No results
+	default:
+		panic("unreachable")
+	}
+
+	msg := []interface{}{
+		1, // response
+		id,
+		"threads",
+		[]interface{}{
+			total,
+			result,
+		},
 	}
 	return c.writeMsg(msg)
 }

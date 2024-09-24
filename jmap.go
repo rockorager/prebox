@@ -770,22 +770,26 @@ func jmapToMsgpackAddressList(jlist []*mail.Address) []Address {
 	return result
 }
 
-func (c *JmapClient) Search(query []string) ([]Email, error) {
+func (c *JmapClient) Search(limit int, offset int, query []string) (uint64, []Email, error) {
 	start := time.Now()
 	q, err := c.parseSearch(query)
 	if err != nil {
-		return []Email{}, err
+		return 0, []Email{}, err
 	}
 	search := bleve.NewSearchRequest(q)
-	search.Size = math.MaxInt
+	search.Size = limit
+	if limit < 0 {
+		search.Size = math.MaxInt
+	}
+	search.From = offset
 
 	search.SortBy([]string{"-Date"})
 	searchResult, err := c.index.Search(search)
 	if err != nil {
-		return []Email{}, err
+		return 0, []Email{}, err
 	}
 	result := make([]Email, 0, len(searchResult.Hits))
-	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), len(searchResult.Hits))
+	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), searchResult.Total)
 	start = time.Now()
 	err = c.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(emailPrefix)
@@ -808,11 +812,11 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 		return nil
 	})
 	if err != nil {
-		return []Email{}, err
+		return 0, []Email{}, err
 	}
 	log.Trace("[%s] Unpack: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
 
-	return result, nil
+	return searchResult.Total, result, nil
 }
 
 func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
