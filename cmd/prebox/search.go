@@ -97,19 +97,16 @@ func printThread(emls []*prebox.ThreadedEmail, depth int) {
 			printThread(eml.Replies, depth+1)
 			continue
 		}
-		dateStr := eml.Date
-		date, err := time.Parse(time.RFC3339, eml.Date)
+		date := time.Unix(eml.Date, 0)
 		now := time.Now()
-		if err == nil {
-			switch {
-			case now.Before(date.Add(7 * 24 * time.Hour)):
-				dateStr = date.Local().Format("Mon 3:04PM")
-			case now.Before(date.Add(6 * 7 * 24 * time.Hour)):
-				dateStr = date.Local().Format("Jan 2 3:04PM")
-			default:
-				dateStr = date.Local().Format(time.DateOnly)
-
-			}
+		var dateStr string
+		switch {
+		case now.Before(date.Add(7 * 24 * time.Hour)):
+			dateStr = date.Local().Format("Mon 3:04PM")
+		case now.Before(date.Add(6 * 7 * 24 * time.Hour)):
+			dateStr = date.Local().Format("Jan 2 3:04PM")
+		default:
+			dateStr = date.Local().Format(time.DateOnly)
 		}
 		name := ""
 		if len(eml.From) > 0 {

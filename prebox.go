@@ -28,23 +28,20 @@ type Mailbox struct {
 }
 
 type Email struct {
-	Type         string    `msgpack:"type"`
-	Id           string    `msgpack:"id"`
-	Subject      string    `msgpack:"subject"`
-	MessageId    string    `msgpack:"message_id"`
-	InReplyTo    string    `msgpack:"in_reply_to"`
-	Date         string    `msgpack:"date"`
-	Body         MimePart  `msgpack:"body,omitempty"`
-	References   []string  `msgpack:"references"`
-	ReplyTo      []Address `msgpack:"reply_to"`
-	From         []Address `msgpack:"from"`
-	To           []Address `msgpack:"to"`
-	Cc           []Address `msgpack:"cc"`
-	Bcc          []Address `msgpack:"bcc"`
-	Mailboxes    []string  `msgpack:"mailbox_ids"`
-	Keywords     []string  `msgpack:"keywords"`
-	Size         uint      `msgpack:"size"`
-	TimestampUTC int64     `msgpack:",omitempty"`
+	Type       string    `msgpack:"type,omitempty"`
+	Id         string    `msgpack:"id"`
+	Subject    string    `msgpack:"subject"`
+	MessageId  string    `msgpack:"message_id"`
+	References []string  `msgpack:"references"`
+	ReplyTo    []Address `msgpack:"reply_to,omitempty"`
+	From       []Address `msgpack:"from,omitempty"`
+	To         []Address `msgpack:"to,omitempty"`
+	Cc         []Address `msgpack:"cc,omitempty"`
+	Bcc        []Address `msgpack:"bcc,omitempty"`
+	Mailboxes  []string  `msgpack:"mailbox_ids,omitempty"`
+	Keywords   []string  `msgpack:"keywords,omitempty"`
+	Size       uint      `msgpack:"size,omitempty"`
+	Date       int64     `msgpack:"date,omitempty"`
 }
 
 func (e Email) StrippedSubject() string {
@@ -56,19 +53,6 @@ func (e Email) StrippedSubject() string {
 		}
 		return subject
 	}
-}
-
-func (e Email) CombinedReferences() []string {
-	refs := e.References
-	if e.InReplyTo != "" {
-		refs = append(refs, e.InReplyTo)
-	}
-	return refs
-}
-
-type MimePart struct {
-	MimeType string `msgpack:"mime_type"`
-	Value    string `msgpack:"value"`
 }
 
 type Address struct {

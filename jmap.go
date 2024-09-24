@@ -512,7 +512,6 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 					}
 					// TODO: send email to connections
 
-					sanitizeBody(&eml)
 					err = batch.Index(eml.Id, eml)
 					if err != nil {
 						log.Error("[%s] Couldn't index email: %s", c.name, err)
@@ -709,9 +708,8 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 	for k := range v.Keywords {
 		keywords = append(keywords, k)
 	}
-	inReplyTo := ""
 	if len(v.InReplyTo) > 0 {
-		inReplyTo = v.InReplyTo[0]
+		v.References = append(v.References, v.InReplyTo[0])
 	}
 	messageId := ""
 	if len(v.MessageID) > 0 {
@@ -723,21 +721,6 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 	}
 	assert.True(date != nil)
 
-	// var body MimePart
-	// for _, part := range v.TextBody {
-	// 	assert.True(part != nil)
-	// 	val, ok := v.BodyValues[part.PartID]
-	// 	if !ok {
-	// 		log.Warn("Part not found: %s: BodyValues: %v", part.PartID, v.BodyValues)
-	// 		continue
-	// 	}
-	// 	if val.IsEncodingProblem {
-	// 		break
-	// 	}
-	// 	body.Value = val.Value
-	// 	body.MimeType = part.Type
-	// 	break
-	// }
 	eml := Email{
 		Type:       "email",
 		Id:         string(v.ID),
@@ -748,13 +731,11 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		ReplyTo:    jmapToMsgpackAddressList(v.ReplyTo),
 		Subject:    v.Subject,
 		Mailboxes:  mboxes,
-		Date:       date.Format(time.RFC3339),
 		Keywords:   keywords,
 		References: v.References,
-		InReplyTo:  inReplyTo,
 		MessageId:  messageId,
 		Size:       uint(v.Size),
-		// Body:         body,
+		Date:       date.UTC().Unix(),
 	}
 	return eml
 }
@@ -779,8 +760,8 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 	}
 	search := bleve.NewSearchRequest(q)
 	search.Size = math.MaxInt
-	// Presort by the date string, we'll do a timezone aware sort later
-	search.SortBy([]string{"Date"})
+
+	search.SortBy([]string{"-Date"})
 	searchResult, err := c.index.Search(search)
 	if err != nil {
 		return []Email{}, err
