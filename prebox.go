@@ -111,6 +111,9 @@ func (s *Server) ListenAndServe() error {
 			if err != nil && !errors.Is(err, io.EOF) {
 				c.Log("error: %v", err)
 			}
+			if c.backend != nil {
+				c.backend.RemoveConnection(&c)
+			}
 		}()
 	}
 }
@@ -223,6 +226,7 @@ func (c *Connection) handleConnect(id int, args []interface{}) error {
 			continue
 		}
 		c.backend = backend
+		c.backend.AddConnection(c)
 		msg := []interface{}{
 			1,
 			id,
@@ -262,6 +266,12 @@ func (c *Connection) writeMsg(msg []interface{}) error {
 		return err
 	}
 	return buf.Flush()
+}
+
+func (c *Connection) Write(b []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.Write(b)
 }
 
 func (c *Connection) writeErrorResponse(id int, method string, err error) {

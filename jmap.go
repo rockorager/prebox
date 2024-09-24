@@ -1,14 +1,17 @@
 package prebox
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/url"
 	"os"
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"git.sr.ht/~rockorager/go-jmap"
@@ -17,10 +20,8 @@ import (
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
 	"github.com/blevesearch/bleve/v2"
-	"github.com/blevesearch/bleve/v2/analysis/datetime/optional"
 	"github.com/blevesearch/bleve/v2/mapping"
 	"github.com/blevesearch/bleve/v2/search/query"
-	strip "github.com/grokify/html-strip-tags-go"
 	"github.com/rockorager/prebox/log"
 	"github.com/rockorager/zig4go/assert"
 	"github.com/vmihailenco/msgpack/v5"
@@ -46,11 +47,6 @@ var emailProperties = []string{
 
 var emailBodyProperties = []string{"partId", "type"}
 
-type indexedEmail struct {
-	Type string
-	Body string
-}
-
 type JmapClient struct {
 	cl                  *jmap.Client
 	url                 *url.URL
@@ -58,6 +54,8 @@ type JmapClient struct {
 	stateChangeDebounce *time.Timer
 	index               bleve.Index
 	name                string
+	conns               []*Connection
+	connMu              sync.Mutex
 }
 
 func NewJmapClient(name string, url *url.URL) (*JmapClient, error) {
@@ -109,13 +107,9 @@ func newIndexMapping() (mapping.IndexMapping, error) {
 	keywordFieldMapping.Store = false
 	keywordFieldMapping.IncludeInAll = false
 
-	dateFieldMapping := bleve.NewDateTimeFieldMapping()
-	dateFieldMapping.DateFormat = optional.Name
-	dateFieldMapping.Store = false
-	dateFieldMapping.IncludeInAll = false
-
 	numericMapping := bleve.NewNumericFieldMapping()
 	numericMapping.Store = false
+	numericMapping.IncludeInAll = false
 
 	ignoreField := bleve.NewDocumentDisabledMapping()
 
@@ -131,19 +125,16 @@ func newIndexMapping() (mapping.IndexMapping, error) {
 	emailMapping.AddFieldMappingsAt("Bcc.Email", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("ReplyTo.Name", englishTextFieldMapping)
 	emailMapping.AddFieldMappingsAt("ReplyTo.Email", englishTextFieldMapping)
-	emailMapping.AddFieldMappingsAt("Body.Value", englishTextFieldMapping)
 
-	emailMapping.AddFieldMappingsAt("Date", dateFieldMapping)
+	emailMapping.AddFieldMappingsAt("Date", numericMapping)
 	emailMapping.AddFieldMappingsAt("Size", numericMapping)
 
 	emailMapping.AddFieldMappingsAt("MessageId", keywordFieldMapping)
-	emailMapping.AddFieldMappingsAt("InReplyTo", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("References", keywordFieldMapping)
 
 	emailMapping.AddFieldMappingsAt("Mailboxes", keywordFieldMapping)
 	emailMapping.AddFieldMappingsAt("Keywords", keywordFieldMapping)
 
-	emailMapping.AddSubDocumentMapping("Body.MimeType", ignoreField)
 	emailMapping.AddSubDocumentMapping("Type", ignoreField)
 	emailMapping.AddSubDocumentMapping("Id", ignoreField)
 
@@ -227,12 +218,31 @@ func (c *JmapClient) listen() {
 		if err != nil {
 			log.Error("[%s] %v", err)
 		}
-		log.Warn("[%s] Connection lost. Reconnecting in %s...", delay)
+		log.Warn("[%s] Connection lost. Reconnecting in %s...", c.name, delay)
 		delay = min(delay*2, 60*time.Second)
 		if time.Since(start) > 120*time.Second {
 			// Reset delay to 1 second if we were conencted for more
 			// than 120 seconds
 			delay = 1 * time.Second
+		}
+	}
+}
+
+func (c *JmapClient) AddConnection(conn *Connection) {
+	log.Trace("[%s] Adding connection", c.name)
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	c.conns = append(c.conns, conn)
+}
+
+func (c *JmapClient) RemoveConnection(conn *Connection) {
+	log.Trace("[%s] Removing connection", c.name)
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	for i, tgt := range c.conns {
+		if conn == tgt {
+			c.conns = append(c.conns[0:i], c.conns[i+1:]...)
+			return
 		}
 	}
 }
@@ -432,6 +442,7 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 				if len(arg.List) == 0 {
 					continue
 				}
+				updated := make([]Mailbox, 0, len(arg.List))
 				for _, v := range arg.List {
 					mbox := jmapToMsgpackMailbox(v)
 					b, err := msgpack.Marshal(mbox)
@@ -444,6 +455,8 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 						log.Error("[%s] Couldn't cache mailbox: %v", c.name, err)
 						continue
 					}
+					updated = append(updated, mbox)
+
 					// TODO: send mailbox to connections
 					_ = mbox
 				}
@@ -451,6 +464,11 @@ func (c *JmapClient) handleStateChange(state *jmap.StateChange) {
 					log.Error("[%s] Couldn't update mailbox state: %v", err)
 					continue
 				}
+				c.writeToConns([]interface{}{
+					2, // notification
+					"updated_mailboxes",
+					updated,
+				})
 				log.Trace("[%s] Mailbox state updated to: %q", c.name, arg.State)
 			case *email.ChangesResponse:
 				for _, v := range arg.Destroyed {
@@ -767,6 +785,8 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 		return []Email{}, err
 	}
 	result := make([]Email, 0, len(searchResult.Hits))
+	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), len(searchResult.Hits))
+	start = time.Now()
 	err = c.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(emailPrefix)
 		if bucket == nil {
@@ -790,23 +810,7 @@ func (c *JmapClient) Search(query []string) ([]Email, error) {
 	if err != nil {
 		return []Email{}, err
 	}
-	log.Trace("[%s] Search: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
-
-	start = time.Now()
-	// TODO: this is pretty inefficient but decently fast since we are
-	// presorted
-	sort.Slice(result, func(i int, j int) bool {
-		lhs, err := time.Parse(time.RFC3339, result[i].Date)
-		if err != nil {
-			return false
-		}
-		rhs, err := time.Parse(time.RFC3339, result[j].Date)
-		if err != nil {
-			return false
-		}
-		return lhs.After(rhs)
-	})
-	log.Trace("[%s] Sort: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
+	log.Trace("[%s] Unpack: elapsed=%s, hits=%d", c.name, time.Since(start), len(result))
 
 	return result, nil
 }
@@ -872,10 +876,12 @@ func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
 				root.AddMustNot(q)
 			}
 		case "from":
-			qName := bleve.NewMatchQuery(term)
+			qName := bleve.NewFuzzyQuery(term)
 			qName.SetField("From.Name")
-			qEmail := bleve.NewMatchQuery(term)
+			qName.SetPrefix(3)
+			qEmail := bleve.NewFuzzyQuery(term)
 			qEmail.SetField("From.Email")
+			qEmail.SetPrefix(3)
 			root.AddMust(bleve.NewDisjunctionQuery(qName, qEmail))
 		case "to":
 			toName := bleve.NewMatchQuery(term)
@@ -907,10 +913,23 @@ func (c *JmapClient) parseSearch(args []string) (query.Query, error) {
 	return root, nil
 }
 
-func sanitizeBody(eml *Email) {
-	switch eml.Body.MimeType {
-	case "text/html":
-		body := strip.StripTags(eml.Body.Value)
-		eml.Body.Value = body
+func (c *JmapClient) writeToConns(msg []interface{}) {
+	c.connMu.Lock()
+	writers := make([]io.Writer, 0, len(c.conns))
+	for _, conn := range c.conns {
+		writers = append(writers, conn)
+	}
+	c.connMu.Unlock()
+
+	mw := io.MultiWriter(writers...)
+	bw := bufio.NewWriter(mw)
+	enc := msgpack.NewEncoder(bw)
+	err := enc.Encode(msg)
+	if err != nil {
+		log.Error("[%s] err writing to conn: %v", c.name, err)
+	}
+	err = bw.Flush()
+	if err != nil {
+		log.Error("[%s] err writing to conn: %v", c.name, err)
 	}
 }

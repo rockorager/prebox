@@ -35,15 +35,7 @@ func sortSiblings(siblings []*ThreadedEmail) {
 		if siblings[j].Email == nil {
 			return false
 		}
-		lhs, err := time.Parse(time.RFC3339, siblings[i].Email.Date)
-		if err != nil {
-			return false
-		}
-		rhs, err := time.Parse(time.RFC3339, siblings[j].Email.Date)
-		if err != nil {
-			return false
-		}
-		return lhs.Before(rhs)
+		return siblings[i].Email.Date < siblings[j].Email.Date
 	})
 	for _, item := range siblings {
 		sortSiblings(item.Replies)
@@ -70,7 +62,7 @@ func buildRootSet(emls []Email) []*ThreadedEmail {
 			child  *ThreadedEmail
 		)
 		// Connect the references
-		for _, ref := range eml.CombinedReferences() {
+		for _, ref := range eml.References {
 			child, ok = idTable[ref]
 			if !ok {
 				child = &ThreadedEmail{}
