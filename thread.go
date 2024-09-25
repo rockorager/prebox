@@ -11,7 +11,7 @@ import (
 )
 
 type ThreadedEmail struct {
-	*Email  `msgpack:"email"`
+	Email   `msgpack:"email"`
 	parent  *ThreadedEmail   `msgpack:"parent,omitempty"`
 	Replies []*ThreadedEmail `msgpack:"replies"`
 }
@@ -29,12 +29,6 @@ func thread(emls []Email) []*ThreadedEmail {
 
 func sortSiblings(siblings []*ThreadedEmail) {
 	sort.Slice(siblings, func(i, j int) bool {
-		if siblings[i].Email == nil {
-			return false
-		}
-		if siblings[j].Email == nil {
-			return false
-		}
 		return siblings[i].Email.Date < siblings[j].Email.Date
 	})
 	for _, item := range siblings {
@@ -55,7 +49,7 @@ func buildRootSet(emls []Email) []*ThreadedEmail {
 			idList = append(idList, c)
 		}
 		// Assign this message to the container
-		c.Email = &eml
+		c.Email = eml
 
 		var (
 			parent *ThreadedEmail
@@ -86,7 +80,7 @@ func buildRootSet(emls []Email) []*ThreadedEmail {
 }
 
 func print(c *ThreadedEmail, depth int) {
-	if c.Email != nil {
+	if c.Email.Id != "" {
 		fmt.Printf("%s%s\r\n", strings.Repeat("  ", depth), c.Email.Subject)
 	} else {
 		fmt.Printf("%s[dummy]\r\n", strings.Repeat("  ", depth))
@@ -174,7 +168,7 @@ func pruneSet(set []*ThreadedEmail) []*ThreadedEmail {
 // an empty container with no parent and one child
 func prune(c *ThreadedEmail) *ThreadedEmail {
 	// we only prune empty containers
-	if c.Email != nil {
+	if c.Email.Id != "" {
 		return nil
 	}
 	children := pruneSet(c.Replies)

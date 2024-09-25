@@ -33,15 +33,15 @@ type Email struct {
 	Subject    string    `msgpack:"subject"`
 	MessageId  string    `msgpack:"message_id"`
 	References []string  `msgpack:"references"`
-	ReplyTo    []Address `msgpack:"reply_to,omitempty"`
-	From       []Address `msgpack:"from,omitempty"`
-	To         []Address `msgpack:"to,omitempty"`
-	Cc         []Address `msgpack:"cc,omitempty"`
-	Bcc        []Address `msgpack:"bcc,omitempty"`
-	Mailboxes  []string  `msgpack:"mailbox_ids,omitempty"`
-	Keywords   []string  `msgpack:"keywords,omitempty"`
-	Size       uint      `msgpack:"size,omitempty"`
-	Date       int64     `msgpack:"date,omitempty"`
+	ReplyTo    []Address `msgpack:"reply_to"`
+	From       []Address `msgpack:"from"`
+	To         []Address `msgpack:"to"`
+	Cc         []Address `msgpack:"cc"`
+	Bcc        []Address `msgpack:"bcc"`
+	Mailboxes  []string  `msgpack:"mailbox_ids"`
+	Keywords   []string  `msgpack:"keywords"`
+	Size       uint      `msgpack:"size"`
+	Date       int64     `msgpack:"date"`
 }
 
 func (e Email) StrippedSubject() string {

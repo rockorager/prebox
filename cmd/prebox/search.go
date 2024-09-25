@@ -144,7 +144,7 @@ func searchCmd(cmd *cobra.Command, args []string) error {
 func printThread(emls []*prebox.ThreadedEmail, depth int) {
 	for _, eml := range emls {
 		fmt.Print(strings.Repeat("  ", depth))
-		if eml.Email == nil {
+		if eml.Email.Id == "" {
 			fmt.Println("[dummy]")
 			printThread(eml.Replies, depth+1)
 			continue

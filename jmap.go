@@ -41,7 +41,7 @@ var (
 var emailProperties = []string{
 	"id", "blobId", "mailboxIds", "keywords", "size",
 	"receivedAt", "messageId", "inReplyTo", "references", "sender", "from",
-	"to", "cc", "replyTo", "subject", "sentAt", "hasAttachment",
+	"to", "cc", "replyTo", "subject", "hasAttachment",
 	// "textBody", "bodyValues",
 }
 
@@ -733,11 +733,6 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 	if len(v.MessageID) > 0 {
 		messageId = v.MessageID[0]
 	}
-	date := v.ReceivedAt
-	if v.SentAt != nil {
-		date = v.SentAt
-	}
-	assert.True(date != nil)
 
 	eml := Email{
 		Type:       "email",
@@ -753,7 +748,7 @@ func jmapToMsgpackEmail(v *email.Email) Email {
 		References: v.References,
 		MessageId:  messageId,
 		Size:       uint(v.Size),
-		Date:       date.UTC().Unix(),
+		Date:       v.ReceivedAt.UTC().Unix(),
 	}
 	return eml
 }
